@@ -36,7 +36,7 @@ function appendFile(
   mimeType: string,
   fallbackPrefix: string,
 ) {
-  const normalizedType = mimeType || 'application/octet-stream';
+  const normalizedType = normalizeMimeType(fileUri, mimeType);
   const ext = normalizedType.split('/')[1]?.replace('jpeg', 'jpg').replace('mpeg', 'mp3') ?? 'bin';
   form.append(
     fieldName,
@@ -46,6 +46,38 @@ function appendFile(
       name: `${fallbackPrefix}_${Date.now()}.${ext}`,
     } as unknown as Blob,
   );
+}
+
+function normalizeMimeType(fileUri: string, mimeType?: string | null) {
+  const normalized = mimeType?.split(';')[0]?.trim().toLowerCase();
+  if (normalized) {
+    return normalized;
+  }
+
+  const ext = fileUri.split('.').pop()?.toLowerCase() ?? '';
+  switch (ext) {
+    case 'jpg':
+    case 'jpeg':
+      return 'image/jpeg';
+    case 'png':
+      return 'image/png';
+    case 'webp':
+      return 'image/webp';
+    case 'mp3':
+      return 'audio/mpeg';
+    case 'wav':
+      return 'audio/wav';
+    case 'm4a':
+      return 'audio/mp4';
+    case 'ogg':
+      return 'audio/ogg';
+    case 'webm':
+      return 'audio/webm';
+    case 'aac':
+      return 'audio/aac';
+    default:
+      return 'application/octet-stream';
+  }
 }
 
 async function request<T>(
@@ -70,13 +102,13 @@ async function request<T>(
 
   if (!response.ok) {
     let message = 'Request failed';
-    try {
-      const body = await response.json();
-      message = body.detail ?? body.message ?? message;
-    } catch {
-      const text = await response.text();
-      if (text) {
-        message = text;
+    const raw = await response.text();
+    if (raw) {
+      try {
+        const body = JSON.parse(raw) as { detail?: string; message?: string };
+        message = body.detail ?? body.message ?? raw;
+      } catch {
+        message = raw;
       }
     }
     throw new ApiError(message, response.status);
@@ -146,6 +178,50 @@ export async function getAdminSchoolClasses(token: string, schoolId: number) {
   return request<ClassOut[]>(`/admin/schools/${schoolId}/classes`, {}, token);
 }
 
+export async function getAdminClass(
+  token: string,
+  schoolId: number,
+  classId: number,
+) {
+  return request<ClassOut>(`/admin/schools/${schoolId}/classes/${classId}`, {}, token);
+}
+
+export async function getAdminClassSubjects(
+  token: string,
+  schoolId: number,
+  classId: number,
+) {
+  return request<SubjectOut[]>(
+    `/admin/schools/${schoolId}/classes/${classId}/subjects`,
+    {},
+    token,
+  );
+}
+
+export async function getAdminSubjectStudents(
+  token: string,
+  schoolId: number,
+  subjectId: number,
+) {
+  return request<StudentOut[]>(
+    `/admin/schools/${schoolId}/subjects/${subjectId}/students`,
+    {},
+    token,
+  );
+}
+
+export async function getAdminSubjectRecordings(
+  token: string,
+  schoolId: number,
+  subjectId: number,
+) {
+  return request<RecordingWithReport[]>(
+    `/admin/schools/${schoolId}/subjects/${subjectId}/recordings`,
+    {},
+    token,
+  );
+}
+
 export async function getSchoolAdminClasses(token: string) {
   return request<ClassOut[]>('/school/classes', {}, token);
 }
@@ -160,7 +236,11 @@ export async function getSchoolAdminMe(token: string) {
 
 export async function updateSchoolAdminMe(
   token: string,
-  payload: { name?: string | null },
+  payload: {
+    name?: string | null;
+    school_name?: string | null;
+    school_address?: string | null;
+  },
 ) {
   return request<SchoolAdminProfileOut>(
     '/school/me',

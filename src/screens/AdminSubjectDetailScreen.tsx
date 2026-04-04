@@ -1,32 +1,26 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
-import { useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
-import * as DocumentPicker from 'expo-document-picker';
 import {
   ActivityIndicator,
-  Alert,
-  Modal,
   Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { AudioWaveform } from '../components/AudioWaveform';
 import { useAuth } from '../context/AuthContext';
-import { buildWaveformBars, formatAudioTime, inferMimeTypeFromUri, isAudioMimeType } from '../lib/audio';
-import { getTeacherSubjectRecordings, getTeacherSubjectStudents, uploadRecording } from '../lib/api';
+import { getAdminSubjectRecordings, getAdminSubjectStudents } from '../lib/api';
+import { formatAudioTime } from '../lib/audio';
 import { RootStackParamList } from '../navigation/AppNavigator';
 import { colors } from '../theme/colors';
 import { RecordingStatus, RecordingWithReport, StudentOut } from '../types/api';
 
-type Props = NativeStackScreenProps<RootStackParamList, 'TeacherSubjectDetail'>;
+type Props = NativeStackScreenProps<RootStackParamList, 'AdminSubjectDetail'>;
 
 type DetailTab = 'recordings' | 'students';
 
@@ -51,7 +45,6 @@ function RecordingRow({
   onPress: () => void;
 }) {
   const status = statusStyle(recording.status);
-
   return (
     <Pressable onPress={onPress} style={styles.card}>
       <View style={styles.cardIcon}>
@@ -114,11 +107,9 @@ function StudentRow({ student }: { student: StudentOut }) {
   );
 }
 
-export function TeacherSubjectDetailScreen({ navigation, route }: Props) {
+export function AdminSubjectDetailScreen({ navigation, route }: Props) {
   const { session } = useAuth();
-  const { subjectId, subjectName } = route.params;
-  const previewPlayer = useAudioPlayer(null, { updateInterval: 180 });
-  const previewStatus = useAudioPlayerStatus(previewPlayer);
+  const { schoolId, subjectId, subjectName } = route.params;
 
   const [activeTab, setActiveTab] = useState<DetailTab>('recordings');
   const [recordings, setRecordings] = useState<RecordingWithReport[]>([]);
@@ -126,14 +117,6 @@ export function TeacherSubjectDetailScreen({ navigation, route }: Props) {
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [uploading, setUploading] = useState(false);
-
-  const [showActionSheet, setShowActionSheet] = useState(false);
-  const [showUploadModal, setShowUploadModal] = useState(false);
-  const [pendingUri, setPendingUri] = useState<string | null>(null);
-  const [pendingMime, setPendingMime] = useState('audio/mpeg');
-  const [chapterName, setChapterName] = useState('');
-  const [description, setDescription] = useState('');
 
   const load = useCallback(
     async (silent = false) => {
@@ -146,8 +129,8 @@ export function TeacherSubjectDetailScreen({ navigation, route }: Props) {
       setError(null);
       try {
         const [recordingData, studentData] = await Promise.all([
-          getTeacherSubjectRecordings(session.token, subjectId),
-          getTeacherSubjectStudents(session.token, subjectId),
+          getAdminSubjectRecordings(session.token, schoolId, subjectId),
+          getAdminSubjectStudents(session.token, schoolId, subjectId),
         ]);
         setRecordings(recordingData);
         setStudents(studentData);
@@ -158,7 +141,7 @@ export function TeacherSubjectDetailScreen({ navigation, route }: Props) {
         setRefreshing(false);
       }
     },
-    [session, subjectId],
+    [schoolId, session, subjectId],
   );
 
   useFocusEffect(
@@ -166,14 +149,6 @@ export function TeacherSubjectDetailScreen({ navigation, route }: Props) {
       void load();
     }, [load]),
   );
-
-  useEffect(() => {
-    if (!showUploadModal || !pendingUri) {
-      previewPlayer.pause();
-      return;
-    }
-    previewPlayer.replace(pendingUri);
-  }, [pendingUri, previewPlayer, showUploadModal]);
 
   const groupedRecordings = useMemo(() => {
     const grouped = new Map<string, RecordingWithReport[]>();
@@ -187,89 +162,6 @@ export function TeacherSubjectDetailScreen({ navigation, route }: Props) {
   }, [recordings]);
 
   const completedCount = recordings.filter((recording) => recording.status === 'completed').length;
-  const previewBars = useMemo(() => buildWaveformBars(pendingUri ?? subjectName), [pendingUri, subjectName]);
-  const previewProgress =
-    previewStatus.duration > 0 ? Math.min(1, previewStatus.currentTime / previewStatus.duration) : 0;
-
-  const closeUploadModal = async () => {
-    previewPlayer.pause();
-    if (previewStatus.duration > 0) {
-      await previewPlayer.seekTo(0).catch(() => undefined);
-    }
-    setShowUploadModal(false);
-    setPendingUri(null);
-    setChapterName('');
-    setDescription('');
-  };
-
-  const handlePickFile = async () => {
-    try {
-      const result = await DocumentPicker.getDocumentAsync({
-        type: ['audio/*'],
-        copyToCacheDirectory: true,
-      });
-      if (result.canceled || !result.assets?.[0]) {
-        return;
-      }
-
-      const asset = result.assets[0];
-      const resolvedMime = inferMimeTypeFromUri(asset.uri, asset.mimeType);
-      if (!isAudioMimeType(resolvedMime)) {
-        Alert.alert('Audio only', 'Please select an audio file such as MP3, WAV, M4A, OGG, AAC, or WebM.');
-        return;
-      }
-
-      setPendingUri(asset.uri);
-      setPendingMime(resolvedMime);
-      setChapterName('');
-      setDescription('');
-      setShowActionSheet(false);
-      setShowUploadModal(true);
-    } catch {
-      Alert.alert('Error', 'Could not open the file picker.');
-    }
-  };
-
-  const handleUpload = async () => {
-    if (!session || !pendingUri || !chapterName.trim() || uploading) {
-      return;
-    }
-
-    setUploading(true);
-    try {
-      const recording = await uploadRecording(
-        session.token,
-        subjectId,
-        pendingUri,
-        pendingMime,
-        chapterName.trim(),
-        description.trim() || undefined,
-      );
-      setRecordings((current) => [recording, ...current]);
-      await closeUploadModal();
-      setActiveTab('recordings');
-    } catch (e) {
-      Alert.alert('Upload failed', e instanceof Error ? e.message : 'Could not upload recording.');
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  const handlePreviewToggle = async () => {
-    if (!pendingUri) {
-      return;
-    }
-
-    if (previewStatus.playing) {
-      previewPlayer.pause();
-      return;
-    }
-
-    if (previewStatus.duration > 0 && previewStatus.currentTime >= previewStatus.duration - 0.2) {
-      await previewPlayer.seekTo(0).catch(() => undefined);
-    }
-    previewPlayer.play();
-  };
 
   return (
     <SafeAreaView edges={['top']} style={styles.safe}>
@@ -298,10 +190,10 @@ export function TeacherSubjectDetailScreen({ navigation, route }: Props) {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.hero}>
-          <Text style={styles.heroKicker}>COURSE MODULE</Text>
+          <Text style={styles.heroKicker}>SUBJECT INSIGHT</Text>
           <Text style={styles.heroTitle}>{subjectName}</Text>
           <Text style={styles.heroBody}>
-            Record classes, upload audio files, review the roster, and open the shared analysis view.
+            Super admin read-only view for recordings, analysis status, and enrolled students.
           </Text>
         </View>
 
@@ -320,13 +212,6 @@ export function TeacherSubjectDetailScreen({ navigation, route }: Props) {
               </Pressable>
             );
           })}
-        </View>
-
-        <View style={styles.actionRow}>
-          <Pressable onPress={() => setShowActionSheet(true)} style={styles.actionButton}>
-            <Ionicons color="#fff" name="add-circle-outline" size={18} />
-            <Text style={styles.actionButtonText}>Upload New Recording</Text>
-          </Pressable>
         </View>
 
         {recordings.length > 0 ? (
@@ -366,7 +251,7 @@ export function TeacherSubjectDetailScreen({ navigation, route }: Props) {
             <View style={styles.center}>
               <Ionicons color={colors.textMuted} name="mic-outline" size={40} />
               <Text style={styles.emptyTitle}>No recordings yet</Text>
-              <Text style={styles.emptyBody}>Record or upload your first audio lesson below.</Text>
+              <Text style={styles.emptyBody}>Teacher uploads for this subject will appear here.</Text>
             </View>
           ) : (
             <View style={styles.sectionStack}>
@@ -405,115 +290,6 @@ export function TeacherSubjectDetailScreen({ navigation, route }: Props) {
           </View>
         )}
       </ScrollView>
-
-      <Modal animationType="fade" onRequestClose={() => setShowActionSheet(false)} transparent visible={showActionSheet}>
-        <Pressable onPress={() => setShowActionSheet(false)} style={styles.sheetOverlay}>
-          <View style={styles.sheet}>
-            <View style={styles.sheetHandle} />
-            <Text style={styles.sheetTitle}>Add Recording</Text>
-            <Text style={styles.sheetSubtitle}>Choose how you want to add this lesson audio.</Text>
-
-            <Pressable
-              onPress={() => {
-                setShowActionSheet(false);
-                navigation.navigate('TeacherRecording', { subjectId, subjectName });
-              }}
-              style={styles.sheetOption}
-            >
-              <View style={styles.sheetOptionIcon}>
-                <Ionicons color={colors.accent} name="mic-outline" size={20} />
-              </View>
-              <View style={styles.sheetOptionBody}>
-                <Text style={styles.sheetOptionTitle}>Record Class</Text>
-                <Text style={styles.sheetOptionText}>Capture the lesson live in the app.</Text>
-              </View>
-            </Pressable>
-
-            <Pressable onPress={() => void handlePickFile()} style={styles.sheetOption}>
-              <View style={styles.sheetOptionIcon}>
-                <Ionicons color={colors.accent} name="document-outline" size={20} />
-              </View>
-              <View style={styles.sheetOptionBody}>
-                <Text style={styles.sheetOptionTitle}>Upload Audio File</Text>
-                <Text style={styles.sheetOptionText}>Pick an MP3, WAV, M4A, OGG, AAC, or WebM file.</Text>
-              </View>
-            </Pressable>
-          </View>
-        </Pressable>
-      </Modal>
-
-      <Modal animationType="slide" onRequestClose={() => void closeUploadModal()} transparent visible={showUploadModal}>
-        <Pressable onPress={() => void closeUploadModal()} style={styles.sheetOverlay}>
-          <Pressable style={[styles.sheet, styles.uploadSheet]}>
-            <View style={styles.sheetHandle} />
-            <Text style={styles.sheetTitle}>Upload Audio File</Text>
-            <Text style={styles.sheetSubtitle}>Add chapter details, preview the audio, then upload it.</Text>
-
-            <View style={styles.previewCard}>
-              <View style={styles.previewHeader}>
-                <Text style={styles.previewTitle}>Preview</Text>
-                <Text style={styles.previewMeta}>
-                  {formatAudioTime(previewStatus.currentTime)} / {formatAudioTime(previewStatus.duration)}
-                </Text>
-              </View>
-              <Pressable onPress={() => void handlePreviewToggle()} style={styles.previewButton}>
-                <View style={styles.previewIcon}>
-                  {!previewStatus.isLoaded ? (
-                    <ActivityIndicator color={colors.accent} size="small" />
-                  ) : (
-                    <Ionicons
-                      color={colors.accent}
-                      name={previewStatus.playing ? 'pause' : 'play'}
-                      size={22}
-                    />
-                  )}
-                </View>
-                <View style={styles.previewTextWrap}>
-                  <Text style={styles.previewTextTitle}>Listen before upload</Text>
-                  <Text style={styles.previewTextBody}>Audio-only uploads are supported in this screen.</Text>
-                </View>
-              </Pressable>
-              <AudioWaveform bars={previewBars} progress={previewProgress} />
-            </View>
-
-            <Text style={styles.inputLabel}>CHAPTER NAME *</Text>
-            <TextInput
-              autoCapitalize="words"
-              onChangeText={setChapterName}
-              placeholder="Add chapter title"
-              placeholderTextColor={colors.textPlaceholder}
-              style={styles.input}
-              value={chapterName}
-            />
-
-            <Text style={styles.inputLabel}>DESCRIPTION</Text>
-            <TextInput
-              autoCapitalize="sentences"
-              multiline
-              numberOfLines={4}
-              onChangeText={setDescription}
-              placeholder="Optional notes about this upload"
-              placeholderTextColor={colors.textPlaceholder}
-              style={[styles.input, styles.descriptionInput]}
-              value={description}
-            />
-
-            <View style={styles.modalActions}>
-              <Pressable onPress={() => void closeUploadModal()} style={styles.secondaryButton}>
-                <Text style={styles.secondaryButtonText}>Cancel</Text>
-              </Pressable>
-              <Pressable
-                disabled={!chapterName.trim() || uploading}
-                onPress={() => void handleUpload()}
-                style={[styles.primaryButton, (!chapterName.trim() || uploading) && styles.buttonDisabled]}
-              >
-                {uploading ? <ActivityIndicator color="#fff" size="small" /> : null}
-                <Text style={styles.primaryButtonText}>{uploading ? 'Uploading…' : 'Upload'}</Text>
-              </Pressable>
-            </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
     </SafeAreaView>
   );
 }
@@ -554,17 +330,6 @@ const styles = StyleSheet.create({
   tabButtonActive: { backgroundColor: colors.surface },
   tabLabel: { fontSize: 14, fontWeight: '700', color: colors.textMuted },
   tabLabelActive: { color: colors.textPrimary },
-  actionRow: { paddingHorizontal: 20 },
-  actionButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 14,
-    borderRadius: 18,
-    backgroundColor: colors.accent,
-  },
-  actionButtonText: { color: '#fff', fontSize: 15, fontWeight: '800' },
   statsStrip: {
     flexDirection: 'row',
     marginHorizontal: 20,
@@ -629,113 +394,4 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   studentAvatarText: { fontSize: 15, fontWeight: '800', color: colors.accentDark },
-  sheetOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(26, 28, 28, 0.32)',
-    justifyContent: 'flex-end',
-  },
-  sheet: {
-    backgroundColor: colors.surface,
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    paddingHorizontal: 20,
-    paddingTop: 12,
-    paddingBottom: 28,
-    gap: 14,
-  },
-  uploadSheet: { gap: 12 },
-  sheetHandle: {
-    alignSelf: 'center',
-    width: 42,
-    height: 4,
-    borderRadius: 999,
-    backgroundColor: colors.border,
-  },
-  sheetTitle: { fontSize: 20, fontWeight: '800', color: colors.textPrimary },
-  sheetSubtitle: { fontSize: 14, lineHeight: 20, color: colors.textSecondary },
-  sheetOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-    padding: 16,
-    borderRadius: 18,
-    backgroundColor: colors.surfaceSoft,
-  },
-  sheetOptionIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 16,
-    backgroundColor: colors.accentSoft,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  sheetOptionBody: { flex: 1, gap: 4 },
-  sheetOptionTitle: { fontSize: 15, fontWeight: '700', color: colors.textPrimary },
-  sheetOptionText: { fontSize: 13, lineHeight: 18, color: colors.textSecondary },
-  previewCard: {
-    padding: 16,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surfaceSoft,
-    gap: 12,
-  },
-  previewHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
-  previewTitle: { fontSize: 16, fontWeight: '800', color: colors.textPrimary },
-  previewMeta: { fontSize: 12, color: colors.textMuted, fontWeight: '600' },
-  previewButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    padding: 14,
-    borderRadius: 18,
-    backgroundColor: colors.surface,
-  },
-  previewIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: colors.accentSoft,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  previewTextWrap: { flex: 1, gap: 3 },
-  previewTextTitle: { fontSize: 15, fontWeight: '700', color: colors.textPrimary },
-  previewTextBody: { fontSize: 13, lineHeight: 18, color: colors.textSecondary },
-  inputLabel: { fontSize: 11, fontWeight: '800', letterSpacing: 0.8, color: colors.textMuted },
-  input: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 16,
-    backgroundColor: colors.surfaceSoft,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 15,
-    color: colors.textPrimary,
-  },
-  descriptionInput: { minHeight: 96, textAlignVertical: 'top' },
-  modalActions: { flexDirection: 'row', gap: 12, marginTop: 6 },
-  secondaryButton: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 14,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-  },
-  secondaryButtonText: { fontSize: 15, fontWeight: '700', color: colors.textSecondary },
-  primaryButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 14,
-    borderRadius: 16,
-    backgroundColor: colors.accent,
-  },
-  primaryButtonText: { fontSize: 15, fontWeight: '800', color: '#fff' },
-  buttonDisabled: { opacity: 0.55 },
 });

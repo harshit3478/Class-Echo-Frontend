@@ -34,6 +34,8 @@ export function SchoolAdminProfileScreen({ navigation }: Props) {
   const { session, signOut } = useAuth();
   const [profile, setProfile] = useState<SchoolAdminProfileOut | null>(null);
   const [draftName, setDraftName] = useState('');
+  const [draftSchoolName, setDraftSchoolName] = useState('');
+  const [draftSchoolAddress, setDraftSchoolAddress] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [avatarUploading, setAvatarUploading] = useState(false);
@@ -47,6 +49,8 @@ export function SchoolAdminProfileScreen({ navigation }: Props) {
       const nextProfile = await getSchoolAdminMe(session.token);
       setProfile(nextProfile);
       setDraftName(nextProfile.name);
+      setDraftSchoolName(nextProfile.school_name);
+      setDraftSchoolAddress(nextProfile.school_address ?? '');
     } finally {
       setIsLoading(false);
     }
@@ -84,6 +88,8 @@ export function SchoolAdminProfileScreen({ navigation }: Props) {
       const updated = await uploadSchoolAdminProfileImage(session.token, asset.uri, asset.mimeType);
       setProfile(updated);
       setDraftName(updated.name);
+      setDraftSchoolName(updated.school_name);
+      setDraftSchoolAddress(updated.school_address ?? '');
     } catch (e) {
       Alert.alert('Upload failed', e instanceof Error ? e.message : 'Could not upload image.');
     } finally {
@@ -107,12 +113,18 @@ export function SchoolAdminProfileScreen({ navigation }: Props) {
   };
 
   const handleSave = async () => {
-    if (!session || !draftName.trim() || saving) return;
+    if (!session || !draftName.trim() || !draftSchoolName.trim() || saving) return;
     try {
       setSaving(true);
-      const updated = await updateSchoolAdminMe(session.token, { name: draftName.trim() });
+      const updated = await updateSchoolAdminMe(session.token, {
+        name: draftName.trim(),
+        school_name: draftSchoolName.trim(),
+        school_address: draftSchoolAddress.trim() || null,
+      });
       setProfile(updated);
       setDraftName(updated.name);
+      setDraftSchoolName(updated.school_name);
+      setDraftSchoolAddress(updated.school_address ?? '');
       setEditing(false);
     } catch (e) {
       Alert.alert('Save failed', e instanceof Error ? e.message : 'Could not save changes.');
@@ -163,7 +175,14 @@ export function SchoolAdminProfileScreen({ navigation }: Props) {
             <View style={styles.cardHeader}>
               <Text style={styles.cardTitle}>Admin Details</Text>
               {editing ? (
-                <Pressable onPress={() => { setEditing(false); setDraftName(profile?.name ?? ''); }}>
+                <Pressable
+                  onPress={() => {
+                    setEditing(false);
+                    setDraftName(profile?.name ?? '');
+                    setDraftSchoolName(profile?.school_name ?? '');
+                    setDraftSchoolAddress(profile?.school_address ?? '');
+                  }}
+                >
                   <Text style={styles.linkText}>Cancel</Text>
                 </Pressable>
               ) : (
@@ -191,14 +210,6 @@ export function SchoolAdminProfileScreen({ navigation }: Props) {
             <Text style={styles.value}>{profile?.email ?? '—'}</Text>
 
             {editing ? (
-              <Pressable
-                disabled={saving || !draftName.trim()}
-                onPress={() => void handleSave()}
-                style={[styles.primaryButton, (saving || !draftName.trim()) && styles.buttonDisabled]}
-              >
-                {saving ? <ActivityIndicator color="#fff" size="small" /> : null}
-                <Text style={styles.primaryButtonText}>{saving ? 'Saving…' : 'Save Changes'}</Text>
-              </Pressable>
             ) : null}
           </View>
 
@@ -219,10 +230,53 @@ export function SchoolAdminProfileScreen({ navigation }: Props) {
                 </View>
               )}
               <View style={styles.logoInfo}>
-                <Text style={styles.value}>{profile?.school_name ?? '—'}</Text>
-                <Text style={styles.subtleValue}>{profile?.school_address ?? 'No address added'}</Text>
+                <Text style={styles.subtleValue}>Tap the action above to change the school logo.</Text>
               </View>
             </View>
+
+            <Text style={styles.label}>SCHOOL NAME</Text>
+            {editing ? (
+              <TextInput
+                autoCapitalize="words"
+                onChangeText={setDraftSchoolName}
+                placeholder="School name"
+                placeholderTextColor={colors.textPlaceholder}
+                style={styles.input}
+                value={draftSchoolName}
+              />
+            ) : (
+              <Text style={styles.value}>{profile?.school_name ?? '—'}</Text>
+            )}
+
+            <Text style={styles.label}>ADDRESS</Text>
+            {editing ? (
+              <TextInput
+                autoCapitalize="sentences"
+                multiline
+                numberOfLines={3}
+                onChangeText={setDraftSchoolAddress}
+                placeholder="School address"
+                placeholderTextColor={colors.textPlaceholder}
+                style={[styles.input, styles.addressInput]}
+                value={draftSchoolAddress}
+              />
+            ) : (
+              <Text style={styles.subtleValue}>{profile?.school_address ?? 'No address added'}</Text>
+            )}
+
+            {editing ? (
+              <Pressable
+                disabled={saving || !draftName.trim() || !draftSchoolName.trim()}
+                onPress={() => void handleSave()}
+                style={[
+                  styles.primaryButton,
+                  (saving || !draftName.trim() || !draftSchoolName.trim()) && styles.buttonDisabled,
+                ]}
+              >
+                {saving ? <ActivityIndicator color="#fff" size="small" /> : null}
+                <Text style={styles.primaryButtonText}>{saving ? 'Saving…' : 'Save Changes'}</Text>
+              </Pressable>
+            ) : null}
           </View>
 
           <Pressable onPress={signOut} style={styles.signOutButton}>
@@ -304,6 +358,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     fontSize: 15,
     color: colors.textPrimary,
+  },
+  addressInput: {
+    minHeight: 92,
+    paddingVertical: 12,
+    textAlignVertical: 'top',
   },
   primaryButton: {
     marginTop: 8,

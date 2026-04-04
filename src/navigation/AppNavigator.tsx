@@ -4,8 +4,10 @@ import { useAuth } from '../context/AuthContext';
 import { RecordingWithReport, UserRole } from '../types/api';
 
 // Super Admin screens
+import { AdminClassDetailScreen } from '../screens/AdminClassDetailScreen';
 import { AdminCreateSchoolScreen } from '../screens/AdminCreateSchoolScreen';
 import { AdminSchoolDetailScreen } from '../screens/AdminSchoolDetailScreen';
+import { AdminSubjectDetailScreen } from '../screens/AdminSubjectDetailScreen';
 import { SchoolsScreen } from '../screens/SchoolsScreen';
 
 // School Admin screens
@@ -40,6 +42,8 @@ export type RootStackParamList = {
   AdminSchools: undefined;
   AdminCreateSchool: undefined;
   AdminSchoolDetail: { schoolId: number };
+  AdminClassDetail: { schoolId: number; classId: number; className: string; schoolName: string };
+  AdminSubjectDetail: { schoolId: number; subjectId: number; subjectName: string };
   // School Admin
   SchoolAdminClasses: undefined;
   SchoolAdminClassDetail: { classId: number; className: string };
@@ -94,6 +98,9 @@ export function AppNavigator() {
           <Stack.Screen name="AdminSchools" component={SchoolsScreen} />
           <Stack.Screen name="AdminCreateSchool" component={AdminCreateSchoolScreen} />
           <Stack.Screen name="AdminSchoolDetail" component={AdminSchoolDetailScreen} />
+          <Stack.Screen name="AdminClassDetail" component={AdminClassDetailScreen} />
+          <Stack.Screen name="AdminSubjectDetail" component={AdminSubjectDetailScreen} />
+          <Stack.Screen name="RecordingDetail" component={RecordingDetailScreen} />
         </>
       ) : session.role === 'school_admin' ? (
         <>

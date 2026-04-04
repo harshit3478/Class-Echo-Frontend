@@ -32,6 +32,9 @@
         "projectId": "e3d6e184-4383-4bd2-a542-4dd561d0adb3"
       }
     },
-    "owner": "iamharry"
+    "owner": "iamharry",
+    "plugins": [
+      "expo-audio"
+    ]
   }
 }

@@ -1,7 +1,15 @@
+import { useEffect, useMemo, useState } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { Audio } from 'expo-av';
-import { useEffect, useRef, useState } from 'react';
+import {
+  RecordingPresets,
+  requestRecordingPermissionsAsync,
+  setAudioModeAsync,
+  useAudioPlayer,
+  useAudioPlayerStatus,
+  useAudioRecorder,
+  useAudioRecorderState,
+} from 'expo-audio';
 import {
   ActivityIndicator,
   Alert,
@@ -13,7 +21,9 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { AudioWaveform } from '../components/AudioWaveform';
 import { useAuth } from '../context/AuthContext';
+import { formatAudioTime, inferMimeTypeFromUri, normalizeMeteringValue } from '../lib/audio';
 import { uploadRecording } from '../lib/api';
 import { RootStackParamList } from '../navigation/AppNavigator';
 import { colors } from '../theme/colors';
@@ -22,125 +32,156 @@ type Props = NativeStackScreenProps<RootStackParamList, 'TeacherRecording'>;
 
 type RecordState = 'idle' | 'recording' | 'stopped';
 
-function padTwo(n: number) {
-  return String(n).padStart(2, '0');
-}
-
-function formatTimer(seconds: number) {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = seconds % 60;
-  if (h > 0) return `${padTwo(h)}:${padTwo(m)}:${padTwo(s)}`;
-  return `${padTwo(m)}:${padTwo(s)}`;
-}
+const RECORDER_OPTIONS = {
+  ...RecordingPresets.HIGH_QUALITY,
+  isMeteringEnabled: true,
+};
 
 export function RecordingScreen({ navigation, route }: Props) {
   const { session } = useAuth();
   const { subjectId, subjectName } = route.params;
 
+  const recorder = useAudioRecorder(RECORDER_OPTIONS);
+  const recorderState = useAudioRecorderState(recorder, 120);
+  const previewPlayer = useAudioPlayer(null, { updateInterval: 180 });
+  const previewStatus = useAudioPlayerStatus(previewPlayer);
+
   const [state, setState] = useState<RecordState>('idle');
-  const [elapsed, setElapsed] = useState(0);
   const [chapterName, setChapterName] = useState('');
   const [description, setDescription] = useState('');
   const [uploading, setUploading] = useState(false);
+  const [recordedUri, setRecordedUri] = useState<string | null>(null);
+  const [recordedDuration, setRecordedDuration] = useState(0);
+  const [meterBars, setMeterBars] = useState<number[]>([]);
 
-  const recordingRef = useRef<Audio.Recording | null>(null);
-  const recordedUriRef = useRef<string | null>(null);
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  useEffect(() => {
+    if (state !== 'recording') {
+      return;
+    }
 
-  // Clean up on unmount
+    setMeterBars((current) => [...current.slice(-35), normalizeMeteringValue(recorderState.metering)]);
+  }, [recorderState.metering, state]);
+
   useEffect(() => {
     return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-      if (recordingRef.current) {
-        void recordingRef.current.stopAndUnloadAsync().catch(() => undefined);
+      if (recorderState.isRecording) {
+        void recorder.stop().catch(() => undefined);
       }
+      previewPlayer.pause();
     };
-  }, []);
+  }, [previewPlayer, recorder, recorderState.isRecording]);
+
+  const previewBars = useMemo(() => {
+    if (meterBars.length > 0) {
+      return meterBars;
+    }
+    return Array.from({ length: 36 }, () => 0.22);
+  }, [meterBars]);
+
+  const previewProgress =
+    previewStatus.duration > 0 ? Math.min(1, previewStatus.currentTime / previewStatus.duration) : 0;
 
   const startRecording = async () => {
     try {
-      const { granted } = await Audio.requestPermissionsAsync();
+      const { granted } = await requestRecordingPermissionsAsync();
       if (!granted) {
         Alert.alert('Permission required', 'Microphone access is needed to record audio.');
         return;
       }
 
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
-      });
-
-      const { recording } = await Audio.Recording.createAsync(
-        Audio.RecordingOptionsPresets.HIGH_QUALITY,
-      );
-
-      recordingRef.current = recording;
-      setElapsed(0);
+      await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
+      setMeterBars([]);
+      setRecordedUri(null);
+      setRecordedDuration(0);
+      await recorder.prepareToRecordAsync();
+      recorder.record();
       setState('recording');
-
-      timerRef.current = setInterval(() => {
-        setElapsed((prev) => prev + 1);
-      }, 1000);
-    } catch (e) {
+    } catch {
       Alert.alert('Error', 'Could not start recording. Please try again.');
     }
   };
 
   const stopRecording = async () => {
-    if (!recordingRef.current) return;
-    if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
-
     try {
-      await recordingRef.current.stopAndUnloadAsync();
-      const uri = recordingRef.current.getURI();
-      recordedUriRef.current = uri;
-      recordingRef.current = null;
+      await recorder.stop();
+      await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true });
+      const nextState = recorder.getStatus();
+      const uri = nextState.url ?? recorder.uri;
+      if (!uri) {
+        throw new Error('Missing recording file');
+      }
+      setRecordedUri(uri);
+      setRecordedDuration(nextState.durationMillis / 1000);
+      previewPlayer.replace(uri);
       setState('stopped');
-    } catch (e) {
+    } catch {
       Alert.alert('Error', 'Failed to stop recording.');
     }
   };
 
   const cancelRecording = async () => {
-    if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
-    if (recordingRef.current) {
-      await recordingRef.current.stopAndUnloadAsync().catch(() => undefined);
-      recordingRef.current = null;
+    try {
+      if (recorderState.isRecording) {
+        await recorder.stop();
+      }
+      await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true });
+    } catch {
+      // ignore cleanup failures
     }
     navigation.goBack();
   };
 
   const reRecord = async () => {
-    recordedUriRef.current = null;
-    setElapsed(0);
+    previewPlayer.pause();
+    if (previewStatus.duration > 0) {
+      await previewPlayer.seekTo(0).catch(() => undefined);
+    }
+    setRecordedUri(null);
+    setRecordedDuration(0);
+    setMeterBars([]);
     setChapterName('');
     setDescription('');
     setState('idle');
   };
 
+  const togglePreview = async () => {
+    if (!recordedUri) {
+      return;
+    }
+
+    if (previewStatus.playing) {
+      previewPlayer.pause();
+      return;
+    }
+
+    if (previewStatus.duration > 0 && previewStatus.currentTime >= previewStatus.duration - 0.2) {
+      await previewPlayer.seekTo(0).catch(() => undefined);
+    }
+    previewPlayer.play();
+  };
+
   const handleUpload = async () => {
-    if (!session || !recordedUriRef.current || uploading) return;
+    if (!session || !recordedUri || uploading) {
+      return;
+    }
     if (!chapterName.trim()) {
       Alert.alert('Chapter name required', 'Add a chapter name before uploading this recording.');
       return;
     }
+
     setUploading(true);
     try {
       await uploadRecording(
         session.token,
         subjectId,
-        recordedUriRef.current,
-        'audio/mp4',
-        chapterName.trim() || undefined,
+        recordedUri,
+        inferMimeTypeFromUri(recordedUri, 'audio/mp4'),
+        chapterName.trim(),
         description.trim() || undefined,
       );
       navigation.goBack();
     } catch (e) {
-      Alert.alert(
-        'Upload failed',
-        e instanceof Error ? e.message : 'Could not upload recording.',
-      );
+      Alert.alert('Upload failed', e instanceof Error ? e.message : 'Could not upload recording.');
     } finally {
       setUploading(false);
     }
@@ -148,11 +189,10 @@ export function RecordingScreen({ navigation, route }: Props) {
 
   return (
     <SafeAreaView edges={['top']} style={styles.safe}>
-      {/* Header */}
       <View style={styles.header}>
         <Pressable
           hitSlop={8}
-          onPress={state === 'recording' ? cancelRecording : () => navigation.goBack()}
+          onPress={state === 'recording' ? () => void cancelRecording() : () => navigation.goBack()}
           style={styles.headerBack}
         >
           <Ionicons color={colors.textPrimary} name="arrow-back" size={22} />
@@ -162,57 +202,95 @@ export function RecordingScreen({ navigation, route }: Props) {
       </View>
 
       <View style={styles.body}>
-        {/* ── IDLE STATE ── */}
-        {state === 'idle' && (
+        {state === 'idle' ? (
           <>
-            <View style={styles.idleTop}>
+            <View style={styles.hero}>
               <View style={styles.micRing}>
                 <Ionicons color={colors.accent} name="mic" size={52} />
               </View>
               <Text style={styles.idleTitle}>Record Class</Text>
               <Text style={styles.idleSubtitle}>
-                Tap the button below to start recording your lecture.
+                Start recording inside the app, then review the waveform and upload it with chapter details.
               </Text>
             </View>
-            <Pressable onPress={() => { void startRecording(); }} style={styles.recordBtn}>
-              <Ionicons color="#fff" name="mic" size={24} />
+            <Pressable onPress={() => void startRecording()} style={styles.recordBtn}>
+              <Ionicons color="#fff" name="mic" size={22} />
               <Text style={styles.recordBtnText}>Start Recording</Text>
             </Pressable>
           </>
-        )}
+        ) : null}
 
-        {/* ── RECORDING STATE ── */}
-        {state === 'recording' && (
+        {state === 'recording' ? (
           <>
             <View style={styles.recordingTop}>
-              <View style={styles.pulseRing}>
-                <View style={styles.pulseDot} />
+              <View style={styles.liveRow}>
+                <View style={styles.liveDot} />
+                <Text style={styles.liveLabel}>RECORDING</Text>
               </View>
-              <Text style={styles.liveLabel}>RECORDING</Text>
-              <Text style={styles.timerText}>{formatTimer(elapsed)}</Text>
+              <Text style={styles.timerText}>
+                {formatAudioTime(recorderState.durationMillis / 1000)}
+              </Text>
             </View>
+
+            <View style={styles.waveformCard}>
+              <AudioWaveform
+                activeColor="#E53935"
+                bars={previewBars}
+                inactiveColor="#FAD4D4"
+                progress={1}
+              />
+            </View>
+
             <View style={styles.recordingActions}>
-              <Pressable onPress={cancelRecording} style={styles.cancelBtn}>
+              <Pressable onPress={() => void cancelRecording()} style={styles.cancelBtn}>
                 <Ionicons color={colors.textSecondary} name="close" size={22} />
                 <Text style={styles.cancelBtnText}>Cancel</Text>
               </Pressable>
-              <Pressable onPress={() => { void stopRecording(); }} style={styles.stopBtn}>
+              <Pressable onPress={() => void stopRecording()} style={styles.stopBtn}>
                 <View style={styles.stopIcon} />
                 <Text style={styles.stopBtnText}>Stop</Text>
               </Pressable>
             </View>
           </>
-        )}
+        ) : null}
 
-        {/* ── STOPPED STATE ── */}
-        {state === 'stopped' && (
+        {state === 'stopped' ? (
           <>
             <View style={styles.stoppedTop}>
               <View style={styles.doneCircle}>
                 <Ionicons color="#127A40" name="checkmark" size={36} />
               </View>
               <Text style={styles.doneTitle}>Recording Complete</Text>
-              <Text style={styles.doneDuration}>Duration: {formatTimer(elapsed)}</Text>
+              <Text style={styles.doneDuration}>Duration: {formatAudioTime(recordedDuration)}</Text>
+            </View>
+
+            <View style={styles.previewCard}>
+              <View style={styles.previewHeader}>
+                <Text style={styles.previewTitle}>Preview</Text>
+                <Text style={styles.previewMeta}>
+                  {formatAudioTime(previewStatus.currentTime)} / {formatAudioTime(previewStatus.duration || recordedDuration)}
+                </Text>
+              </View>
+              <Pressable onPress={() => void togglePreview()} style={styles.previewButton}>
+                <View style={styles.previewIcon}>
+                  {!previewStatus.isLoaded ? (
+                    <ActivityIndicator color={colors.accent} size="small" />
+                  ) : (
+                    <Ionicons
+                      color={colors.accent}
+                      name={previewStatus.playing ? 'pause' : 'play'}
+                      size={22}
+                    />
+                  )}
+                </View>
+                <View style={styles.previewTextWrap}>
+                  <Text style={styles.previewTextTitle}>Listen before upload</Text>
+                  <Text style={styles.previewTextBody}>
+                    Review the local recording with the same waveform you captured live.
+                  </Text>
+                </View>
+              </Pressable>
+              <AudioWaveform bars={previewBars} progress={previewProgress} />
             </View>
 
             <View style={styles.metaCard}>
@@ -220,46 +298,41 @@ export function RecordingScreen({ navigation, route }: Props) {
               <TextInput
                 autoCapitalize="words"
                 onChangeText={setChapterName}
-                placeholder="e.g. Chapter 3 — Photosynthesis"
+                placeholder="Add chapter title"
                 placeholderTextColor={colors.textPlaceholder}
-                style={styles.metaInput}
+                style={styles.input}
                 value={chapterName}
               />
-              <Text style={[styles.metaLabel, { marginTop: 12 }]}>DESCRIPTION (optional)</Text>
+
+              <Text style={styles.metaLabel}>DESCRIPTION</Text>
               <TextInput
                 autoCapitalize="sentences"
                 multiline
-                numberOfLines={3}
+                numberOfLines={4}
                 onChangeText={setDescription}
-                placeholder="Brief description of this recording…"
+                placeholder="Optional notes about this class"
                 placeholderTextColor={colors.textPlaceholder}
-                style={[styles.metaInput, styles.metaInputMultiline]}
+                style={[styles.input, styles.descriptionInput]}
                 value={description}
               />
             </View>
 
-            <View style={styles.stoppedActions}>
-              <Pressable onPress={() => { void reRecord(); }} style={styles.reRecordBtn}>
-                <Ionicons color={colors.textSecondary} name="refresh" size={18} />
-                <Text style={styles.reRecordText}>Re-record</Text>
+            <View style={styles.footerActions}>
+              <Pressable onPress={() => void reRecord()} style={styles.secondaryBtn}>
+                <Ionicons color={colors.textSecondary} name="refresh-outline" size={18} />
+                <Text style={styles.secondaryBtnText}>Re-record</Text>
               </Pressable>
               <Pressable
-                disabled={uploading || !chapterName.trim()}
-                onPress={() => { void handleUpload(); }}
-                style={[styles.uploadBtn, (uploading || !chapterName.trim()) && { opacity: 0.6 }]}
+                disabled={!chapterName.trim() || uploading}
+                onPress={() => void handleUpload()}
+                style={[styles.primaryBtn, (!chapterName.trim() || uploading) && styles.btnDisabled]}
               >
-                {uploading ? (
-                  <ActivityIndicator color="#fff" size="small" />
-                ) : (
-                  <Ionicons color="#fff" name="cloud-upload-outline" size={20} />
-                )}
-                <Text style={styles.uploadBtnText}>
-                  {uploading ? 'Uploading…' : 'Upload'}
-                </Text>
+                {uploading ? <ActivityIndicator color="#fff" size="small" /> : null}
+                <Text style={styles.primaryBtnText}>{uploading ? 'Uploading…' : 'Upload'}</Text>
               </Pressable>
             </View>
           </>
-        )}
+        ) : null}
       </View>
     </SafeAreaView>
   );
@@ -279,77 +352,159 @@ const styles = StyleSheet.create({
   headerBack: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
   headerTitle: { flex: 1, textAlign: 'center', fontSize: 17, fontWeight: '700', color: colors.textPrimary },
   headerSpacer: { width: 36 },
-
-  body: { flex: 1, paddingHorizontal: 24, paddingBottom: 40, justifyContent: 'space-between' },
-
-  // Idle
-  idleTop: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 16 },
+  body: { flex: 1, padding: 20, gap: 18 },
+  hero: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 16 },
   micRing: {
-    width: 120, height: 120, borderRadius: 60,
+    width: 132,
+    height: 132,
+    borderRadius: 66,
     backgroundColor: colors.accentSoft,
-    alignItems: 'center', justifyContent: 'center',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  idleTitle: { fontSize: 26, fontWeight: '800', color: colors.textPrimary },
-  idleSubtitle: { fontSize: 15, color: colors.textSecondary, textAlign: 'center', lineHeight: 22 },
+  idleTitle: { fontSize: 30, fontWeight: '800', color: colors.textPrimary },
+  idleSubtitle: {
+    fontSize: 15,
+    lineHeight: 22,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    maxWidth: 320,
+  },
   recordBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
-    backgroundColor: colors.accent, borderRadius: 16, height: 56,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    backgroundColor: colors.accent,
+    paddingVertical: 16,
+    borderRadius: 18,
   },
-  recordBtnText: { color: '#fff', fontSize: 17, fontWeight: '800' },
-
-  // Recording
-  recordingTop: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 20 },
-  pulseRing: {
-    width: 120, height: 120, borderRadius: 60,
-    backgroundColor: '#FEE2E2',
-    alignItems: 'center', justifyContent: 'center',
+  recordBtnText: { color: '#fff', fontSize: 16, fontWeight: '800' },
+  recordingTop: { alignItems: 'center', gap: 10, marginTop: 16 },
+  liveRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  liveDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#E53935' },
+  liveLabel: { fontSize: 12, fontWeight: '800', letterSpacing: 1.2, color: '#E53935' },
+  timerText: { fontSize: 38, fontWeight: '800', color: colors.textPrimary },
+  waveformCard: {
+    flex: 1,
+    justifyContent: 'center',
+    padding: 20,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: '#F0D0D0',
+    backgroundColor: '#FFF6F6',
   },
-  pulseDot: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#EF4444' },
-  liveLabel: { fontSize: 13, fontWeight: '800', color: '#EF4444', letterSpacing: 2 },
-  timerText: { fontSize: 52, fontWeight: '800', color: colors.textPrimary, letterSpacing: -1 },
-  recordingActions: { flexDirection: 'row', gap: 16 },
+  recordingActions: { flexDirection: 'row', gap: 12 },
   cancelBtn: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    height: 54, borderRadius: 14, borderWidth: 1.5, borderColor: colors.border,
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    paddingVertical: 16,
   },
   cancelBtnText: { color: colors.textSecondary, fontSize: 15, fontWeight: '700' },
   stopBtn: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
-    height: 54, borderRadius: 14, backgroundColor: '#EF4444',
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    borderRadius: 18,
+    backgroundColor: '#E53935',
+    paddingVertical: 16,
   },
-  stopIcon: { width: 18, height: 18, borderRadius: 3, backgroundColor: '#fff' },
+  stopIcon: { width: 14, height: 14, borderRadius: 4, backgroundColor: '#fff' },
   stopBtnText: { color: '#fff', fontSize: 15, fontWeight: '800' },
-
-  // Stopped
-  stoppedTop: { alignItems: 'center', paddingTop: 40, gap: 10 },
+  stoppedTop: { alignItems: 'center', gap: 10 },
   doneCircle: {
-    width: 80, height: 80, borderRadius: 40,
+    width: 88,
+    height: 88,
+    borderRadius: 44,
     backgroundColor: '#E8F7EE',
-    alignItems: 'center', justifyContent: 'center',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  doneTitle: { fontSize: 22, fontWeight: '800', color: colors.textPrimary },
+  doneTitle: { fontSize: 24, fontWeight: '800', color: colors.textPrimary },
   doneDuration: { fontSize: 14, color: colors.textSecondary },
+  previewCard: {
+    padding: 16,
+    borderRadius: 20,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    gap: 14,
+  },
+  previewHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+  previewTitle: { fontSize: 16, fontWeight: '800', color: colors.textPrimary },
+  previewMeta: { fontSize: 12, color: colors.textMuted, fontWeight: '600' },
+  previewButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 14,
+    borderRadius: 18,
+    backgroundColor: colors.surfaceSoft,
+  },
+  previewIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: colors.accentSoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  previewTextWrap: { flex: 1, gap: 3 },
+  previewTextTitle: { fontSize: 15, fontWeight: '700', color: colors.textPrimary },
+  previewTextBody: { fontSize: 13, lineHeight: 18, color: colors.textSecondary },
   metaCard: {
-    backgroundColor: colors.surface, borderRadius: 16,
-    borderWidth: 1, borderColor: colors.border,
-    padding: 16, gap: 8, marginTop: 24,
+    padding: 18,
+    borderRadius: 20,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    gap: 10,
   },
-  metaLabel: { fontSize: 11, fontWeight: '700', color: colors.textMuted, letterSpacing: 0.8 },
-  metaInput: {
-    height: 48, borderRadius: 12, backgroundColor: colors.background,
-    borderWidth: 1.5, borderColor: colors.border,
-    paddingHorizontal: 14, fontSize: 15, color: colors.textPrimary,
+  metaLabel: { fontSize: 11, fontWeight: '800', letterSpacing: 0.9, color: colors.textMuted },
+  input: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 16,
+    backgroundColor: colors.surfaceSoft,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 15,
+    color: colors.textPrimary,
   },
-  metaInputMultiline: { height: 72, paddingTop: 12, textAlignVertical: 'top' },
-  stoppedActions: { flexDirection: 'row', gap: 14, marginTop: 20 },
-  reRecordBtn: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    height: 54, borderRadius: 14, borderWidth: 1.5, borderColor: colors.border,
+  descriptionInput: { minHeight: 96, textAlignVertical: 'top' },
+  footerActions: { flexDirection: 'row', gap: 12 },
+  secondaryBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderRadius: 18,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingVertical: 15,
   },
-  reRecordText: { color: colors.textSecondary, fontSize: 15, fontWeight: '700' },
-  uploadBtn: {
-    flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
-    height: 54, borderRadius: 14, backgroundColor: colors.accent,
+  secondaryBtnText: { fontSize: 15, fontWeight: '700', color: colors.textSecondary },
+  primaryBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderRadius: 18,
+    backgroundColor: colors.accent,
+    paddingVertical: 15,
   },
-  uploadBtnText: { color: '#fff', fontSize: 15, fontWeight: '800' },
+  primaryBtnText: { fontSize: 15, fontWeight: '800', color: '#fff' },
+  btnDisabled: { opacity: 0.55 },
 });
