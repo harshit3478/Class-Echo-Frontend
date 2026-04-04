@@ -30,6 +30,14 @@ type Props = NativeStackScreenProps<RootStackParamList, 'TeacherSubjectDetail'>;
 
 type DetailTab = 'recordings' | 'students';
 
+function safelyPausePlayer(player: { pause: () => void }) {
+  try {
+    player.pause();
+  } catch {
+    // The hook releases the player automatically on unmount.
+  }
+}
+
 function statusStyle(status: RecordingStatus) {
   switch (status) {
     case 'completed':
@@ -169,7 +177,7 @@ export function TeacherSubjectDetailScreen({ navigation, route }: Props) {
 
   useEffect(() => {
     if (!showUploadModal || !pendingUri) {
-      previewPlayer.pause();
+      safelyPausePlayer(previewPlayer);
       return;
     }
     previewPlayer.replace(pendingUri);
@@ -192,7 +200,7 @@ export function TeacherSubjectDetailScreen({ navigation, route }: Props) {
     previewStatus.duration > 0 ? Math.min(1, previewStatus.currentTime / previewStatus.duration) : 0;
 
   const closeUploadModal = async () => {
-    previewPlayer.pause();
+    safelyPausePlayer(previewPlayer);
     if (previewStatus.duration > 0) {
       await previewPlayer.seekTo(0).catch(() => undefined);
     }
@@ -301,7 +309,7 @@ export function TeacherSubjectDetailScreen({ navigation, route }: Props) {
           <Text style={styles.heroKicker}>COURSE MODULE</Text>
           <Text style={styles.heroTitle}>{subjectName}</Text>
           <Text style={styles.heroBody}>
-            Record classes, upload audio files, review the roster, and open the shared analysis view.
+            Capture classroom audio, upload previous sessions, review your class list, and open each report in one place.
           </Text>
         </View>
 
@@ -411,7 +419,7 @@ export function TeacherSubjectDetailScreen({ navigation, route }: Props) {
           <View style={styles.sheet}>
             <View style={styles.sheetHandle} />
             <Text style={styles.sheetTitle}>Add Recording</Text>
-            <Text style={styles.sheetSubtitle}>Choose how you want to add this lesson audio.</Text>
+            <Text style={styles.sheetSubtitle}>Choose how you want to add an audio recording for this class.</Text>
 
             <Pressable
               onPress={() => {
@@ -424,8 +432,8 @@ export function TeacherSubjectDetailScreen({ navigation, route }: Props) {
                 <Ionicons color={colors.accent} name="mic-outline" size={20} />
               </View>
               <View style={styles.sheetOptionBody}>
-                <Text style={styles.sheetOptionTitle}>Record Class</Text>
-                <Text style={styles.sheetOptionText}>Capture the lesson live in the app.</Text>
+                <Text style={styles.sheetOptionTitle}>Record in App</Text>
+                <Text style={styles.sheetOptionText}>Record the class now and review it before uploading.</Text>
               </View>
             </Pressable>
 
@@ -435,7 +443,7 @@ export function TeacherSubjectDetailScreen({ navigation, route }: Props) {
               </View>
               <View style={styles.sheetOptionBody}>
                 <Text style={styles.sheetOptionTitle}>Upload Audio File</Text>
-                <Text style={styles.sheetOptionText}>Pick an MP3, WAV, M4A, OGG, AAC, or WebM file.</Text>
+                <Text style={styles.sheetOptionText}>Select an existing MP3, WAV, M4A, OGG, AAC, or WebM recording.</Text>
               </View>
             </Pressable>
           </View>
@@ -446,8 +454,8 @@ export function TeacherSubjectDetailScreen({ navigation, route }: Props) {
         <Pressable onPress={() => void closeUploadModal()} style={styles.sheetOverlay}>
           <Pressable style={[styles.sheet, styles.uploadSheet]}>
             <View style={styles.sheetHandle} />
-            <Text style={styles.sheetTitle}>Upload Audio File</Text>
-            <Text style={styles.sheetSubtitle}>Add chapter details, preview the audio, then upload it.</Text>
+            <Text style={styles.sheetTitle}>Upload Audio Recording</Text>
+            <Text style={styles.sheetSubtitle}>Add the chapter details, review the audio, then upload it for analysis.</Text>
 
             <View style={styles.previewCard}>
               <View style={styles.previewHeader}>
@@ -469,8 +477,8 @@ export function TeacherSubjectDetailScreen({ navigation, route }: Props) {
                   )}
                 </View>
                 <View style={styles.previewTextWrap}>
-                  <Text style={styles.previewTextTitle}>Listen before upload</Text>
-                  <Text style={styles.previewTextBody}>Audio-only uploads are supported in this screen.</Text>
+                  <Text style={styles.previewTextTitle}>Review audio</Text>
+                  <Text style={styles.previewTextBody}>Play the recording once before uploading it for processing.</Text>
                 </View>
               </Pressable>
               <AudioWaveform bars={previewBars} progress={previewProgress} />
@@ -480,7 +488,7 @@ export function TeacherSubjectDetailScreen({ navigation, route }: Props) {
             <TextInput
               autoCapitalize="words"
               onChangeText={setChapterName}
-              placeholder="Add chapter title"
+              placeholder="Enter chapter name"
               placeholderTextColor={colors.textPlaceholder}
               style={styles.input}
               value={chapterName}
@@ -492,7 +500,7 @@ export function TeacherSubjectDetailScreen({ navigation, route }: Props) {
               multiline
               numberOfLines={4}
               onChangeText={setDescription}
-              placeholder="Optional notes about this upload"
+              placeholder="Optional summary or notes for this recording"
               placeholderTextColor={colors.textPlaceholder}
               style={[styles.input, styles.descriptionInput]}
               value={description}

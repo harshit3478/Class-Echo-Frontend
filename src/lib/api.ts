@@ -37,7 +37,7 @@ function appendFile(
   fallbackPrefix: string,
 ) {
   const normalizedType = normalizeMimeType(fileUri, mimeType);
-  const ext = normalizedType.split('/')[1]?.replace('jpeg', 'jpg').replace('mpeg', 'mp3') ?? 'bin';
+  const ext = inferFileExtension(fileUri, normalizedType);
   form.append(
     fieldName,
     {
@@ -80,6 +80,24 @@ function normalizeMimeType(fileUri: string, mimeType?: string | null) {
   }
 }
 
+function inferFileExtension(fileUri: string, mimeType: string) {
+  const fromUri = fileUri.split('?')[0]?.split('.').pop()?.toLowerCase();
+  if (fromUri && fromUri.length <= 5) {
+    return fromUri;
+  }
+
+  switch (mimeType) {
+    case 'image/jpeg':
+      return 'jpg';
+    case 'audio/mpeg':
+      return 'mp3';
+    case 'audio/mp4':
+      return 'm4a';
+    default:
+      return mimeType.split('/')[1] ?? 'bin';
+  }
+}
+
 async function request<T>(
   path: string,
   init: RequestInit = {},
@@ -95,10 +113,19 @@ async function request<T>(
     headers.set('Authorization', `Bearer ${token}`);
   }
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    ...init,
-    headers,
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE_URL}${path}`, {
+      ...init,
+      headers,
+    });
+  } catch (error) {
+    const message =
+      error instanceof Error && error.message
+        ? error.message
+        : 'Network request failed';
+    throw new ApiError(message, 0);
+  }
 
   if (!response.ok) {
     let message = 'Request failed';

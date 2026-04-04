@@ -37,6 +37,14 @@ const RECORDER_OPTIONS = {
   isMeteringEnabled: true,
 };
 
+function safelyPausePlayer(player: { pause: () => void }) {
+  try {
+    player.pause();
+  } catch {
+    // The hook releases the player automatically on unmount.
+  }
+}
+
 export function RecordingScreen({ navigation, route }: Props) {
   const { session } = useAuth();
   const { subjectId, subjectName } = route.params;
@@ -64,12 +72,11 @@ export function RecordingScreen({ navigation, route }: Props) {
 
   useEffect(() => {
     return () => {
-      if (recorderState.isRecording) {
+      if (recorder.getStatus().isRecording) {
         void recorder.stop().catch(() => undefined);
       }
-      previewPlayer.pause();
     };
-  }, [previewPlayer, recorder, recorderState.isRecording]);
+  }, [recorder]);
 
   const previewBars = useMemo(() => {
     if (meterBars.length > 0) {
@@ -112,7 +119,11 @@ export function RecordingScreen({ navigation, route }: Props) {
       }
       setRecordedUri(uri);
       setRecordedDuration(nextState.durationMillis / 1000);
-      previewPlayer.replace(uri);
+      try {
+        previewPlayer.replace(uri);
+      } catch {
+        Alert.alert('Preview unavailable', 'The recording was saved, but preview could not be prepared.');
+      }
       setState('stopped');
     } catch {
       Alert.alert('Error', 'Failed to stop recording.');
@@ -132,7 +143,7 @@ export function RecordingScreen({ navigation, route }: Props) {
   };
 
   const reRecord = async () => {
-    previewPlayer.pause();
+    safelyPausePlayer(previewPlayer);
     if (previewStatus.duration > 0) {
       await previewPlayer.seekTo(0).catch(() => undefined);
     }
@@ -150,7 +161,7 @@ export function RecordingScreen({ navigation, route }: Props) {
     }
 
     if (previewStatus.playing) {
-      previewPlayer.pause();
+      safelyPausePlayer(previewPlayer);
       return;
     }
 
@@ -208,9 +219,9 @@ export function RecordingScreen({ navigation, route }: Props) {
               <View style={styles.micRing}>
                 <Ionicons color={colors.accent} name="mic" size={52} />
               </View>
-              <Text style={styles.idleTitle}>Record Class</Text>
+              <Text style={styles.idleTitle}>Start Classroom Recording</Text>
               <Text style={styles.idleSubtitle}>
-                Start recording inside the app, then review the waveform and upload it with chapter details.
+                Record the session, review the audio, and upload it with the chapter details when you are ready.
               </Text>
             </View>
             <Pressable onPress={() => void startRecording()} style={styles.recordBtn}>
@@ -244,7 +255,7 @@ export function RecordingScreen({ navigation, route }: Props) {
             <View style={styles.recordingActions}>
               <Pressable onPress={() => void cancelRecording()} style={styles.cancelBtn}>
                 <Ionicons color={colors.textSecondary} name="close" size={22} />
-                <Text style={styles.cancelBtnText}>Cancel</Text>
+                <Text style={styles.cancelBtnText}>Discard</Text>
               </Pressable>
               <Pressable onPress={() => void stopRecording()} style={styles.stopBtn}>
                 <View style={styles.stopIcon} />
@@ -260,8 +271,8 @@ export function RecordingScreen({ navigation, route }: Props) {
               <View style={styles.doneCircle}>
                 <Ionicons color="#127A40" name="checkmark" size={36} />
               </View>
-              <Text style={styles.doneTitle}>Recording Complete</Text>
-              <Text style={styles.doneDuration}>Duration: {formatAudioTime(recordedDuration)}</Text>
+              <Text style={styles.doneTitle}>Recording Ready</Text>
+              <Text style={styles.doneDuration}>Length: {formatAudioTime(recordedDuration)}</Text>
             </View>
 
             <View style={styles.previewCard}>
@@ -284,9 +295,9 @@ export function RecordingScreen({ navigation, route }: Props) {
                   )}
                 </View>
                 <View style={styles.previewTextWrap}>
-                  <Text style={styles.previewTextTitle}>Listen before upload</Text>
+                  <Text style={styles.previewTextTitle}>Review recording</Text>
                   <Text style={styles.previewTextBody}>
-                    Review the local recording with the same waveform you captured live.
+                    Play the recording once to confirm the audio is clear before uploading it.
                   </Text>
                 </View>
               </Pressable>
@@ -298,7 +309,7 @@ export function RecordingScreen({ navigation, route }: Props) {
               <TextInput
                 autoCapitalize="words"
                 onChangeText={setChapterName}
-                placeholder="Add chapter title"
+                placeholder="Enter chapter name"
                 placeholderTextColor={colors.textPlaceholder}
                 style={styles.input}
                 value={chapterName}
@@ -310,7 +321,7 @@ export function RecordingScreen({ navigation, route }: Props) {
                 multiline
                 numberOfLines={4}
                 onChangeText={setDescription}
-                placeholder="Optional notes about this class"
+                placeholder="Optional summary or notes for this class"
                 placeholderTextColor={colors.textPlaceholder}
                 style={[styles.input, styles.descriptionInput]}
                 value={description}
@@ -320,7 +331,7 @@ export function RecordingScreen({ navigation, route }: Props) {
             <View style={styles.footerActions}>
               <Pressable onPress={() => void reRecord()} style={styles.secondaryBtn}>
                 <Ionicons color={colors.textSecondary} name="refresh-outline" size={18} />
-                <Text style={styles.secondaryBtnText}>Re-record</Text>
+                <Text style={styles.secondaryBtnText}>Record Again</Text>
               </Pressable>
               <Pressable
                 disabled={!chapterName.trim() || uploading}
