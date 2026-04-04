@@ -208,9 +208,6 @@ export function SchoolAdminProfileScreen({ navigation }: Props) {
 
             <Text style={styles.label}>EMAIL</Text>
             <Text style={styles.value}>{profile?.email ?? '—'}</Text>
-
-            {editing ? (
-            ) : null}
           </View>
 
           <View style={styles.card}>

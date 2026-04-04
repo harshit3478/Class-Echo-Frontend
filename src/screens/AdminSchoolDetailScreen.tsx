@@ -99,13 +99,21 @@ function AdminContact({ school }: { school: SchoolOut }) {
   );
 }
 
-function ClassRow({ classItem, index }: { classItem: ClassOut; index: number }) {
+function ClassRow({
+  classItem,
+  index,
+  onPress,
+}: {
+  classItem: ClassOut;
+  index: number;
+  onPress: () => void;
+}) {
   const colors_ = ['#D1E4FF', '#E8F7EE', '#FFF4E0', '#F5F0FF', '#FFE8EC'];
   const textColors_ = ['#0061A3', '#127A40', '#92400E', '#6B21A8', '#9B1239'];
   const colorIdx = index % colors_.length;
 
   return (
-    <View style={styles.classRow}>
+    <Pressable onPress={onPress} style={styles.classRow}>
       <View style={[styles.classTag, { backgroundColor: colors_[colorIdx] }]}>
         <Text style={[styles.classTagText, { color: textColors_[colorIdx] }]}>
           {classItem.name.slice(0, 3).toUpperCase()}
@@ -118,7 +126,7 @@ function ClassRow({ classItem, index }: { classItem: ClassOut; index: number }) 
         </Text>
       </View>
       <Ionicons color={colors.textMuted} name="chevron-forward" size={16} />
-    </View>
+    </Pressable>
   );
 }
 
@@ -314,7 +322,16 @@ export function AdminSchoolDetailScreen({ navigation, route }: Props) {
                 {classes.map((classItem, idx) => (
                   <View key={classItem.id}>
                     {idx > 0 ? <View style={styles.rowDivider} /> : null}
-                    <ClassRow classItem={classItem} index={idx} />
+                    <ClassRow
+                      classItem={classItem}
+                      index={idx}
+                      onPress={() => navigation.navigate('AdminClassDetail', {
+                        schoolId: route.params.schoolId,
+                        classId: classItem.id,
+                        className: classItem.name,
+                        schoolName: school.name,
+                      })}
+                    />
                   </View>
                 ))}
               </View>
