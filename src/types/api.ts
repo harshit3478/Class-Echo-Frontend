@@ -82,10 +82,34 @@ export type RecordingWithReport = {
   id: number;
   subject_id: number;
   teacher_id: number;
+  chapter_name: string | null;
+  description: string | null;
   cloudinary_url: string;
   duration_seconds: number | null;
   status: RecordingStatus;
   uploaded_at: string;
   processed_at: string | null;
   report?: LLMReportOut | null;
+};
+
+export type StudentWithClassOut = {
+  id: number;
+  name: string;
+  email: string;
+  mobile_number: string | null;
+  class_id: number;
+  class_name: string;
+  created_at: string;
+};
+
+export type StudentProfileOut = {
+  id: number;
+  name: string;
+  email: string;
+  mobile_number: string | null;
+  school_id: number;
+  school_name: string;
+  class_id: number;
+  class_name: string;
+  created_at: string;
 };

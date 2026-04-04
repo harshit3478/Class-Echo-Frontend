@@ -1,11 +1,16 @@
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useEffect, useState } from 'react';
-import { Feather } from '@expo/vector-icons';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import {
+  ActivityIndicator,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { InfoState } from '../components/InfoState';
-import { PanelCard } from '../components/PanelCard';
 import { useAuth } from '../context/AuthContext';
 import { getAdminSchool, getAdminSchoolClasses } from '../lib/api';
 import { RootStackParamList } from '../navigation/AppNavigator';
@@ -13,6 +18,106 @@ import { colors } from '../theme/colors';
 import { ClassOut, SchoolOut } from '../types/api';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'AdminSchoolDetail'>;
+
+function SchoolHero({ school }: { school: SchoolOut }) {
+  const initials = school.name
+    .split(' ')
+    .slice(0, 2)
+    .map((w) => w[0] ?? '')
+    .join('')
+    .toUpperCase();
+
+  return (
+    <View style={styles.hero}>
+      <View style={styles.heroIconWrap}>
+        <Text style={styles.heroInitials}>{initials}</Text>
+      </View>
+      <View style={styles.heroTextWrap}>
+        <Text style={styles.institutionalLabel}>INSTITUTIONAL DETAIL</Text>
+        <Text style={styles.heroName}>{school.name}</Text>
+        {school.address ? (
+          <View style={styles.heroAddrRow}>
+            <Ionicons color={colors.textMuted} name="location-outline" size={14} />
+            <Text style={styles.heroAddr}>{school.address}</Text>
+          </View>
+        ) : null}
+      </View>
+    </View>
+  );
+}
+
+function AdminContact({ school }: { school: SchoolOut }) {
+  if (!school.admin) {
+    return (
+      <View style={styles.adminCard}>
+        <View style={styles.adminCardHeader}>
+          <Ionicons color={colors.textMuted} name="person-circle-outline" size={20} />
+          <Text style={styles.adminCardTitle}>Admin Contact</Text>
+        </View>
+        <View style={styles.adminEmptyRow}>
+          <Ionicons color={colors.warning} name="warning-outline" size={16} />
+          <Text style={styles.adminEmptyText}>No admin assigned to this school yet.</Text>
+        </View>
+        <Text style={styles.adminEmptyHint}>
+          Edit the school profile to set up administrator credentials.
+        </Text>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.adminCard}>
+      <View style={styles.adminCardHeader}>
+        <Ionicons color={colors.accent} name="person-circle-outline" size={20} />
+        <Text style={styles.adminCardTitle}>Admin Contact</Text>
+      </View>
+
+      <View style={styles.adminProfile}>
+        <View style={styles.adminAvatar}>
+          <Text style={styles.adminAvatarText}>
+            {school.admin.name.split(' ').map((w) => w[0] ?? '').join('').toUpperCase().slice(0, 2)}
+          </Text>
+        </View>
+        <View style={styles.adminInfo}>
+          <Text style={styles.adminName}>{school.admin.name}</Text>
+          <Text style={styles.adminRole}>School Administrator</Text>
+        </View>
+      </View>
+
+      <View style={styles.adminContactRow}>
+        <View style={styles.adminContactItem}>
+          <Ionicons color={colors.textMuted} name="mail-outline" size={15} />
+          <Text style={styles.adminContactText} numberOfLines={1}>
+            {school.admin.email}
+          </Text>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+function ClassRow({ classItem, index }: { classItem: ClassOut; index: number }) {
+  const colors_ = ['#D1E4FF', '#E8F7EE', '#FFF4E0', '#F5F0FF', '#FFE8EC'];
+  const textColors_ = ['#0061A3', '#127A40', '#92400E', '#6B21A8', '#9B1239'];
+  const colorIdx = index % colors_.length;
+
+  return (
+    <View style={styles.classRow}>
+      <View style={[styles.classTag, { backgroundColor: colors_[colorIdx] }]}>
+        <Text style={[styles.classTagText, { color: textColors_[colorIdx] }]}>
+          {classItem.name.slice(0, 3).toUpperCase()}
+        </Text>
+      </View>
+      <View style={styles.classInfo}>
+        <Text style={styles.className}>{classItem.name}</Text>
+        <Text style={styles.classDate}>
+          Added {new Date(classItem.created_at).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}
+        </Text>
+      </View>
+      <Ionicons color={colors.textMuted} name="chevron-forward" size={16} />
+    </View>
+  );
+}
 
 export function AdminSchoolDetailScreen({ navigation, route }: Props) {
   const { session } = useAuth();
@@ -22,22 +127,18 @@ export function AdminSchoolDetailScreen({ navigation, route }: Props) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!session) {
-      return;
-    }
+    if (!session) return;
 
     const load = async () => {
       setIsLoading(true);
       setError(null);
-
       try {
-        const [schoolResponse, classesResponse] = await Promise.all([
+        const [schoolData, classesData] = await Promise.all([
           getAdminSchool(session.token, route.params.schoolId),
           getAdminSchoolClasses(session.token, route.params.schoolId),
         ]);
-
-        setSchool(schoolResponse);
-        setClasses(classesResponse);
+        setSchool(schoolData);
+        setClasses(classesData);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Unable to load school');
       } finally {
@@ -49,220 +150,396 @@ export function AdminSchoolDetailScreen({ navigation, route }: Props) {
   }, [route.params.schoolId, session]);
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <ScrollView
-        contentContainerStyle={styles.content}
-        showsVerticalScrollIndicator={false}
-      >
-        <View style={styles.topBar}>
-          <Pressable onPress={() => navigation.goBack()} style={styles.iconButton}>
-            <Feather color={colors.textPrimary} name="arrow-left" size={18} />
+    <SafeAreaView edges={['top']} style={styles.safe}>
+      {/* Header */}
+      <View style={styles.header}>
+        <Pressable onPress={() => navigation.goBack()} style={styles.backBtn}>
+          <Ionicons color={colors.textPrimary} name="arrow-back" size={22} />
+        </Pressable>
+        <Text style={styles.headerTitle}>School Profile</Text>
+        <View style={styles.headerRight}>
+          <Pressable style={styles.iconBtn}>
+            <Ionicons color={colors.textPrimary} name="search-outline" size={20} />
           </Pressable>
-          <Text style={styles.topTitle}>Institution Detail</Text>
-          <View style={styles.iconButton} />
+          <Pressable style={styles.iconBtn}>
+            <Ionicons color={colors.textPrimary} name="ellipsis-vertical" size={20} />
+          </Pressable>
         </View>
+      </View>
 
-        {isLoading ? (
-          <InfoState loading title="Loading school profile" />
-        ) : error ? (
-          <InfoState body={error} title="Could not load school" />
-        ) : school ? (
-          <>
-            <PanelCard>
-              <View style={styles.hero}>
-                <View style={styles.heroBadge}>
-                  <Text style={styles.heroBadgeText}>
-                    {school.name
-                      .split(' ')
-                      .slice(0, 2)
-                      .map((part) => part[0] ?? '')
-                      .join('')}
-                  </Text>
-                </View>
-                <View style={styles.heroBody}>
-                  <Text style={styles.heroTitle}>{school.name}</Text>
-                  <Text style={styles.heroSubtitle}>
-                    {school.address ?? 'District location pending'}
-                  </Text>
-                </View>
-              </View>
+      {isLoading ? (
+        <View style={styles.center}>
+          <ActivityIndicator color={colors.accent} size="large" />
+          <Text style={styles.loadingText}>Loading school profile…</Text>
+        </View>
+      ) : error ? (
+        <View style={styles.center}>
+          <Ionicons color={colors.textMuted} name="cloud-offline-outline" size={40} />
+          <Text style={styles.errorTitle}>Could not load school</Text>
+          <Text style={styles.errorBody}>{error}</Text>
+        </View>
+      ) : school ? (
+        <ScrollView
+          contentContainerStyle={styles.scroll}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Hero */}
+          <SchoolHero school={school} />
 
-              <View style={styles.metaGrid}>
-                <View style={styles.metaCard}>
-                  <Text style={styles.metaLabel}>Classes</Text>
-                  <Text style={styles.metaValue}>{classes.length}</Text>
-                </View>
-                <View style={styles.metaCard}>
-                  <Text style={styles.metaLabel}>Administrator</Text>
-                  <Text style={styles.metaValueSmall}>
-                    {school.admin?.name ?? 'Unassigned'}
-                  </Text>
-                </View>
-              </View>
-            </PanelCard>
+          {/* Admin Contact */}
+          <AdminContact school={school} />
 
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Academic classes</Text>
-              <Text style={styles.sectionSub}>Mapped from the live admin API</Text>
+          {/* Academic Units */}
+          <View style={styles.unitsSection}>
+            <View style={styles.unitsSectionHeader}>
+              <Text style={styles.unitsSectionTitle}>Academic Units</Text>
+              <Text style={styles.unitsSectionSub}>
+                {classes.length > 0
+                  ? `${classes.length} classes in this school`
+                  : 'No classes added yet'}
+              </Text>
             </View>
 
-            {classes.length === 0 ? (
-              <InfoState
-                body="This school does not have classes yet."
-                title="No classes found"
-              />
-            ) : (
-              classes.map((classItem) => (
-                <PanelCard key={classItem.id}>
-                  <View style={styles.classRow}>
-                    <View>
-                      <Text style={styles.className}>{classItem.name}</Text>
-                      <Text style={styles.classMeta}>
-                        Created {new Date(classItem.created_at).toLocaleDateString()}
-                      </Text>
-                    </View>
-                    <View style={styles.classChip}>
-                      <Text style={styles.classChipText}>Class</Text>
-                    </View>
+            {classes.length > 0 ? (
+              <View style={styles.classTable}>
+                {/* Table header */}
+                <View style={styles.tableHeader}>
+                  <Text style={[styles.tableHeaderText, { flex: 1 }]}>CLASS NAME</Text>
+                  <Text style={styles.tableHeaderText}>ADDED</Text>
+                </View>
+
+                {classes.map((classItem, idx) => (
+                  <View key={classItem.id}>
+                    {idx > 0 ? <View style={styles.rowDivider} /> : null}
+                    <ClassRow classItem={classItem} index={idx} />
                   </View>
-                </PanelCard>
-              ))
+                ))}
+              </View>
+            ) : (
+              <View style={styles.emptyClasses}>
+                <Ionicons color={colors.textMuted} name="school-outline" size={32} />
+                <Text style={styles.emptyClassesText}>
+                  No academic classes have been added to this school yet.
+                </Text>
+              </View>
             )}
-          </>
-        ) : null}
-      </ScrollView>
+          </View>
+        </ScrollView>
+      ) : null}
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
+  safe: {
     flex: 1,
     backgroundColor: colors.background,
   },
-  content: {
-    padding: 24,
-    gap: 18,
-    paddingBottom: 40,
-  },
-  topBar: {
+  header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
   },
-  iconButton: {
-    width: 40,
-    height: 40,
+  backBtn: {
+    width: 36,
+    height: 36,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  topTitle: {
+  headerTitle: {
+    flex: 1,
+    textAlign: 'center',
     color: colors.textPrimary,
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: '700',
   },
-  hero: {
+  headerRight: {
     flexDirection: 'row',
-    gap: 16,
-    alignItems: 'center',
-    marginBottom: 18,
+    gap: 2,
   },
-  heroBadge: {
-    width: 68,
-    height: 68,
-    borderRadius: 18,
+  iconBtn: {
+    width: 36,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  center: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+    padding: 40,
+  },
+  loadingText: {
+    color: colors.textSecondary,
+    fontSize: 14,
+  },
+  errorTitle: {
+    color: colors.textPrimary,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  errorBody: {
+    color: colors.textSecondary,
+    fontSize: 14,
+    textAlign: 'center',
+  },
+  scroll: {
+    paddingBottom: 48,
+    gap: 0,
+  },
+
+  // Hero
+  hero: {
+    backgroundColor: colors.surface,
+    padding: 24,
+    paddingBottom: 28,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    alignItems: 'center',
+    gap: 16,
+  },
+  heroIconWrap: {
+    width: 88,
+    height: 88,
+    borderRadius: 22,
+    backgroundColor: colors.accentSoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 3,
+    borderColor: colors.surface,
+    shadowColor: colors.cardShadow,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 1,
+    shadowRadius: 12,
+    elevation: 6,
+  },
+  heroInitials: {
+    color: colors.accentDark,
+    fontSize: 30,
+    fontWeight: '800',
+  },
+  heroTextWrap: {
+    alignItems: 'center',
+    gap: 6,
+  },
+  institutionalLabel: {
+    color: colors.accent,
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 1.5,
+  },
+  heroName: {
+    color: colors.textPrimary,
+    fontSize: 26,
+    fontWeight: '800',
+    letterSpacing: -0.5,
+    textAlign: 'center',
+    lineHeight: 32,
+  },
+  heroAddrRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 4,
+    marginTop: 2,
+  },
+  heroAddr: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    lineHeight: 18,
+    textAlign: 'center',
+    flex: 1,
+  },
+
+  // Admin contact
+  adminCard: {
+    backgroundColor: colors.surface,
+    margin: 20,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    overflow: 'hidden',
+  },
+  adminCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    backgroundColor: colors.surfaceMuted,
+  },
+  adminCardTitle: {
+    color: colors.textPrimary,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  adminProfile: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  adminAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     backgroundColor: colors.accentSoft,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  heroBadgeText: {
+  adminAvatarText: {
     color: colors.accentDark,
-    fontSize: 22,
+    fontSize: 16,
     fontWeight: '800',
   },
-  heroBody: {
+  adminInfo: {
     flex: 1,
-    gap: 4,
+    gap: 3,
   },
-  heroTitle: {
-    color: colors.textPrimary,
-    fontSize: 22,
-    fontWeight: '800',
-  },
-  heroSubtitle: {
-    color: colors.textSecondary,
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  metaGrid: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  metaCard: {
-    flex: 1,
-    borderRadius: 14,
-    backgroundColor: colors.surfaceMuted,
-    padding: 14,
-    gap: 6,
-  },
-  metaLabel: {
-    color: colors.textMuted,
-    fontSize: 12,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-  },
-  metaValue: {
-    color: colors.textPrimary,
-    fontSize: 28,
-    fontWeight: '800',
-  },
-  metaValueSmall: {
+  adminName: {
     color: colors.textPrimary,
     fontSize: 16,
     fontWeight: '700',
-    lineHeight: 22,
   },
-  sectionHeader: {
-    gap: 4,
-    paddingTop: 6,
+  adminRole: {
+    color: colors.textSecondary,
+    fontSize: 13,
   },
-  sectionTitle: {
+  adminContactRow: {
+    padding: 16,
+    gap: 12,
+  },
+  adminContactItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  adminContactText: {
+    color: colors.textSecondary,
+    fontSize: 14,
+    flex: 1,
+  },
+  adminEmptyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    padding: 16,
+    paddingBottom: 4,
+  },
+  adminEmptyText: {
     color: colors.textPrimary,
-    fontSize: 20,
-    fontWeight: '800',
+    fontSize: 14,
+    fontWeight: '600',
   },
-  sectionSub: {
-    color: colors.textMuted,
+  adminEmptyHint: {
+    color: colors.textSecondary,
     fontSize: 13,
     lineHeight: 18,
+    paddingHorizontal: 16,
+    paddingBottom: 16,
+  },
+
+  // Academic Units
+  unitsSection: {
+    margin: 20,
+    gap: 12,
+  },
+  unitsSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  unitsSectionTitle: {
+    color: colors.textPrimary,
+    fontSize: 18,
+    fontWeight: '800',
+  },
+  unitsSectionSub: {
+    color: colors.textMuted,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  classTable: {
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    overflow: 'hidden',
+  },
+  tableHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    backgroundColor: colors.surfaceMuted,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    gap: 12,
+  },
+  tableHeaderText: {
+    color: colors.textMuted,
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.8,
   },
   classRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    gap: 14,
+  },
+  rowDivider: {
+    height: 1,
+    backgroundColor: colors.border,
+    marginHorizontal: 16,
+  },
+  classTag: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  classTagText: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  classInfo: {
+    flex: 1,
+    gap: 3,
   },
   className: {
     color: colors.textPrimary,
-    fontSize: 18,
+    fontSize: 15,
     fontWeight: '700',
   },
-  classMeta: {
-    color: colors.textSecondary,
-    fontSize: 13,
-    lineHeight: 18,
-    marginTop: 4,
-  },
-  classChip: {
-    borderRadius: 999,
-    backgroundColor: colors.accentSoft,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  classChipText: {
-    color: colors.accentDark,
+  classDate: {
+    color: colors.textMuted,
     fontSize: 12,
-    fontWeight: '700',
+  },
+  emptyClasses: {
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    padding: 32,
+    gap: 12,
+  },
+  emptyClassesText: {
+    color: colors.textSecondary,
+    fontSize: 14,
+    textAlign: 'center',
+    lineHeight: 20,
   },
 });

@@ -13,7 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { InfoState } from '../components/InfoState';
 import { PanelCard } from '../components/PanelCard';
 import { useAuth } from '../context/AuthContext';
-import { getStudentSchools } from '../lib/api';
+import { getPublicSchools } from '../lib/api';
 import { colors } from '../theme/colors';
 import { SchoolOut } from '../types/api';
 
@@ -34,7 +34,7 @@ export function StudentExploreScreen() {
         setIsLoading(true);
         setError(null);
         try {
-          setSchools(await getStudentSchools(session.token, search || undefined));
+          setSchools(await getPublicSchools(search || undefined));
         } catch (err) {
           setError(err instanceof Error ? err.message : 'Unable to load schools');
         } finally {

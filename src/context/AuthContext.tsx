@@ -19,6 +19,7 @@ type AuthContextValue = {
   isLoading: boolean;
   session: Session | null;
   signIn: (username: string, password: string) => Promise<void>;
+  signInDirect: (token: string, role: UserRole) => void;
   signOut: () => void;
 };
 
@@ -41,6 +42,10 @@ export function AuthProvider({ children }: PropsWithChildren) {
     }
   }, []);
 
+  const signInDirect = useCallback((token: string, role: UserRole) => {
+    setSession({ token, role });
+  }, []);
+
   const signOut = useCallback(() => {
     setSession(null);
   }, []);
@@ -50,9 +55,10 @@ export function AuthProvider({ children }: PropsWithChildren) {
       isLoading,
       session,
       signIn,
+      signInDirect,
       signOut,
     }),
-    [isLoading, session, signIn, signOut],
+    [isLoading, session, signIn, signInDirect, signOut],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
