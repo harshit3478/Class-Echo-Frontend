@@ -52,6 +52,18 @@ export type TeacherBrief = {
   email: string;
 };
 
+export type SchoolAdminProfileOut = {
+  id: number;
+  name: string;
+  email: string;
+  profile_pic_url: string | null;
+  school_id: number;
+  school_name: string;
+  school_logo_url: string | null;
+  school_address: string | null;
+  created_at: string;
+};
+
 export type SubjectOut = {
   id: number;
   name: string;
@@ -102,10 +114,21 @@ export type StudentWithClassOut = {
   created_at: string;
 };
 
+export type StudentOut = {
+  id: number;
+  name: string;
+  email: string;
+  mobile_number: string | null;
+  school_id: number;
+  class_id: number;
+  created_at: string;
+};
+
 export type StudentProfileOut = {
   id: number;
   name: string;
   email: string;
+  profile_image_url: string | null;
   mobile_number: string | null;
   school_id: number;
   school_name: string;

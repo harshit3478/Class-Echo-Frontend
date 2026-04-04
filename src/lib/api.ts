@@ -3,7 +3,9 @@ import {
   LLMReportOut,
   RecordingWithReport,
   SchoolCreatePayload,
+  SchoolAdminProfileOut,
   SchoolOut,
+  StudentOut,
   StudentProfileOut,
   StudentWithClassOut,
   SubjectOut,
@@ -25,6 +27,25 @@ class ApiError extends Error {
     super(message);
     this.status = status;
   }
+}
+
+function appendFile(
+  form: FormData,
+  fieldName: string,
+  fileUri: string,
+  mimeType: string,
+  fallbackPrefix: string,
+) {
+  const normalizedType = mimeType || 'application/octet-stream';
+  const ext = normalizedType.split('/')[1]?.replace('jpeg', 'jpg').replace('mpeg', 'mp3') ?? 'bin';
+  form.append(
+    fieldName,
+    {
+      uri: fileUri,
+      type: normalizedType,
+      name: `${fallbackPrefix}_${Date.now()}.${ext}`,
+    } as unknown as Blob,
+  );
 }
 
 async function request<T>(
@@ -105,6 +126,22 @@ export async function getAdminSchool(token: string, schoolId: number) {
   return request<SchoolOut>(`/admin/schools/${schoolId}`, {}, token);
 }
 
+export async function updateAdminSchool(
+  token: string,
+  schoolId: number,
+  payload: { name: string; address?: string | null },
+) {
+  return request<SchoolOut>(
+    `/admin/schools/${schoolId}`,
+    { method: 'PUT', body: JSON.stringify(payload) },
+    token,
+  );
+}
+
+export async function deleteAdminSchool(token: string, schoolId: number) {
+  return request<void>(`/admin/schools/${schoolId}`, { method: 'DELETE' }, token);
+}
+
 export async function getAdminSchoolClasses(token: string, schoolId: number) {
   return request<ClassOut[]>(`/admin/schools/${schoolId}/classes`, {}, token);
 }
@@ -115,6 +152,21 @@ export async function getSchoolAdminClasses(token: string) {
 
 export async function getSchoolAdminTeachers(token: string) {
   return request<TeacherOut[]>('/school/teachers', {}, token);
+}
+
+export async function getSchoolAdminMe(token: string) {
+  return request<SchoolAdminProfileOut>('/school/me', {}, token);
+}
+
+export async function updateSchoolAdminMe(
+  token: string,
+  payload: { name?: string | null },
+) {
+  return request<SchoolAdminProfileOut>(
+    '/school/me',
+    { method: 'PUT', body: JSON.stringify(payload) },
+    token,
+  );
 }
 
 export async function getTeacherSubjects(token: string) {
@@ -134,6 +186,10 @@ export async function getTeacherSubjectRecordings(
     {},
     token,
   );
+}
+
+export async function getTeacherSubjectStudents(token: string, subjectId: number) {
+  return request<StudentOut[]>(`/teacher/subjects/${subjectId}/students`, {}, token);
 }
 
 // ── School Admin: Classes ─────────────────────────────────────────────────────
@@ -217,9 +273,8 @@ export async function uploadRecording(
   chapterName?: string,
   description?: string,
 ) {
-  const ext = mimeType.split('/')[1]?.replace('mpeg', 'mp3') ?? 'mp3';
   const form = new FormData();
-  form.append('file', { uri: fileUri, type: mimeType, name: `recording_${Date.now()}.${ext}` } as unknown as Blob);
+  appendFile(form, 'file', fileUri, mimeType, 'recording');
   if (chapterName) form.append('chapter_name', chapterName);
   if (description) form.append('description', description);
   return request<RecordingWithReport>(
@@ -231,6 +286,27 @@ export async function uploadRecording(
 
 export async function getTeacherRecordingReport(token: string, recordingId: number) {
   return request<LLMReportOut>(`/teacher/recordings/${recordingId}/report`, {}, token);
+}
+
+export async function updateTeacherMe(
+  token: string,
+  payload: { name?: string | null },
+) {
+  return request<TeacherOut>(
+    '/teacher/me',
+    { method: 'PUT', body: JSON.stringify(payload) },
+    token,
+  );
+}
+
+export async function uploadTeacherProfileImage(
+  token: string,
+  imageUri: string,
+  mimeType: string,
+) {
+  const form = new FormData();
+  appendFile(form, 'file', imageUri, mimeType, 'teacher_profile');
+  return request<TeacherOut>('/teacher/profile-image', { method: 'POST', body: form, headers: {} }, token);
 }
 
 // ── Student ───────────────────────────────────────────────────────────────────
@@ -263,8 +339,33 @@ export async function getSchoolSubjectRecordings(token: string, subjectId: numbe
   return request<RecordingWithReport[]>(`/school/subjects/${subjectId}/recordings`, {}, token);
 }
 
+export async function getSchoolSubjectStudents(token: string, subjectId: number) {
+  return request<StudentOut[]>(`/school/subjects/${subjectId}/students`, {}, token);
+}
+
 export async function getStudentMe(token: string) {
   return request<StudentProfileOut>('/student/me', {}, token);
+}
+
+export async function updateStudentMe(
+  token: string,
+  payload: { name?: string | null; mobile_number?: string | null },
+) {
+  return request<StudentProfileOut>(
+    '/student/me',
+    { method: 'PUT', body: JSON.stringify(payload) },
+    token,
+  );
+}
+
+export async function uploadStudentProfileImage(
+  token: string,
+  imageUri: string,
+  mimeType: string,
+) {
+  const form = new FormData();
+  appendFile(form, 'file', imageUri, mimeType, 'student_profile');
+  return request<StudentProfileOut>('/student/profile-image', { method: 'POST', body: form, headers: {} }, token);
 }
 
 export async function getStudentSubjects(token: string, classId: number) {
@@ -273,6 +374,26 @@ export async function getStudentSubjects(token: string, classId: number) {
 
 export async function getStudentSubjectRecordings(token: string, subjectId: number) {
   return request<RecordingWithReport[]>(`/student/subjects/${subjectId}/recordings`, {}, token);
+}
+
+export async function uploadSchoolAdminProfileImage(
+  token: string,
+  imageUri: string,
+  mimeType: string,
+) {
+  const form = new FormData();
+  appendFile(form, 'file', imageUri, mimeType, 'school_admin_profile');
+  return request<SchoolAdminProfileOut>('/school/profile-image', { method: 'POST', body: form, headers: {} }, token);
+}
+
+export async function uploadSchoolLogo(
+  token: string,
+  imageUri: string,
+  mimeType: string,
+) {
+  const form = new FormData();
+  appendFile(form, 'file', imageUri, mimeType, 'school_logo');
+  return request<SchoolOut>('/school/logo', { method: 'POST', body: form, headers: {} }, token);
 }
 
 // ── Public (unauthenticated) ──────────────────────────────────────────────────

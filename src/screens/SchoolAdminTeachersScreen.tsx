@@ -241,14 +241,12 @@ export function SchoolAdminTeachersScreen({ navigation }: Props) {
     <SafeAreaView edges={['top']} style={styles.safe}>
       {/* Header */}
       <View style={styles.header}>
-        <View style={styles.headerLeft}>
-          <Ionicons color={colors.textPrimary} name="menu" size={24} />
-        </View>
+        <View style={styles.headerLeft} />
         <Text style={styles.headerTitle}>EduAdmin</Text>
         <View style={styles.headerRight}>
-          <View style={styles.avatarCircle}>
+          <Pressable onPress={() => navigation.navigate('SchoolAdminProfile')} style={styles.avatarCircle}>
             <Ionicons color={colors.accent} name="person" size={18} />
-          </View>
+          </Pressable>
         </View>
       </View>
 

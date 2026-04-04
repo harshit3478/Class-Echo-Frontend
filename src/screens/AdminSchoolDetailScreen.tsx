@@ -3,16 +3,19 @@ import { useEffect, useState } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import {
   ActivityIndicator,
+  Alert,
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '../context/AuthContext';
-import { getAdminSchool, getAdminSchoolClasses } from '../lib/api';
+import { deleteAdminSchool, getAdminSchool, getAdminSchoolClasses, updateAdminSchool } from '../lib/api';
 import { RootStackParamList } from '../navigation/AppNavigator';
 import { colors } from '../theme/colors';
 import { ClassOut, SchoolOut } from '../types/api';
@@ -126,28 +129,82 @@ export function AdminSchoolDetailScreen({ navigation, route }: Props) {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  // Edit modal state
+  const [showEdit, setShowEdit] = useState(false);
+  const [editName, setEditName] = useState('');
+  const [editAddress, setEditAddress] = useState('');
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+
+  const load = async () => {
     if (!session) return;
+    setIsLoading(true);
+    setError(null);
+    try {
+      const [schoolData, classesData] = await Promise.all([
+        getAdminSchool(session.token, route.params.schoolId),
+        getAdminSchoolClasses(session.token, route.params.schoolId),
+      ]);
+      setSchool(schoolData);
+      setClasses(classesData);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to load school');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
-    const load = async () => {
-      setIsLoading(true);
-      setError(null);
-      try {
-        const [schoolData, classesData] = await Promise.all([
-          getAdminSchool(session.token, route.params.schoolId),
-          getAdminSchoolClasses(session.token, route.params.schoolId),
-        ]);
-        setSchool(schoolData);
-        setClasses(classesData);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Unable to load school');
-      } finally {
-        setIsLoading(false);
-      }
-    };
+  useEffect(() => { void load(); }, [route.params.schoolId, session]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    void load();
-  }, [route.params.schoolId, session]);
+  const openEdit = () => {
+    if (!school) return;
+    setEditName(school.name);
+    setEditAddress(school.address ?? '');
+    setEditError(null);
+    setShowEdit(true);
+  };
+
+  const handleEditSave = async () => {
+    if (!session || !school) return;
+    if (!editName.trim()) { setEditError('School name is required'); return; }
+    setEditSaving(true);
+    setEditError(null);
+    try {
+      const updated = await updateAdminSchool(session.token, school.id, {
+        name: editName.trim(),
+        address: editAddress.trim() || null,
+      });
+      setSchool(updated);
+      setShowEdit(false);
+    } catch (e) {
+      setEditError(e instanceof Error ? e.message : 'Could not save changes');
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
+  const handleDelete = () => {
+    if (!session || !school) return;
+    Alert.alert(
+      'Delete School',
+      `Are you sure you want to delete "${school.name}"? This action cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteAdminSchool(session.token, school.id);
+              navigation.goBack();
+            } catch (e) {
+              Alert.alert('Error', e instanceof Error ? e.message : 'Could not delete school');
+            }
+          },
+        },
+      ],
+    );
+  };
 
   return (
     <SafeAreaView edges={['top']} style={styles.safe}>
@@ -158,14 +215,60 @@ export function AdminSchoolDetailScreen({ navigation, route }: Props) {
         </Pressable>
         <Text style={styles.headerTitle}>School Profile</Text>
         <View style={styles.headerRight}>
-          <Pressable style={styles.iconBtn}>
-            <Ionicons color={colors.textPrimary} name="search-outline" size={20} />
+          <Pressable onPress={openEdit} style={styles.iconBtn}>
+            <Ionicons color={colors.textPrimary} name="pencil-outline" size={20} />
           </Pressable>
-          <Pressable style={styles.iconBtn}>
-            <Ionicons color={colors.textPrimary} name="ellipsis-vertical" size={20} />
+          <Pressable onPress={handleDelete} style={styles.iconBtn}>
+            <Ionicons color="#EF4444" name="trash-outline" size={20} />
           </Pressable>
         </View>
       </View>
+
+      {/* Edit School Modal */}
+      <Modal animationType="slide" transparent visible={showEdit} onRequestClose={() => setShowEdit(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Edit School</Text>
+              <Pressable hitSlop={8} onPress={() => setShowEdit(false)}>
+                <Ionicons color={colors.textMuted} name="close" size={22} />
+              </Pressable>
+            </View>
+            <Text style={styles.inputLabel}>School Name *</Text>
+            <TextInput
+              autoCapitalize="words"
+              onChangeText={setEditName}
+              placeholder="School name"
+              placeholderTextColor={colors.textPlaceholder}
+              style={styles.input}
+              value={editName}
+            />
+            <Text style={styles.inputLabel}>Address</Text>
+            <TextInput
+              autoCapitalize="sentences"
+              multiline
+              numberOfLines={2}
+              onChangeText={setEditAddress}
+              placeholder="School address (optional)"
+              placeholderTextColor={colors.textPlaceholder}
+              style={[styles.input, styles.inputMultiline]}
+              value={editAddress}
+            />
+            {editError ? <Text style={styles.modalError}>{editError}</Text> : null}
+            <Pressable
+              disabled={editSaving}
+              onPress={() => { void handleEditSave(); }}
+              style={[styles.modalSaveBtn, editSaving && { opacity: 0.6 }]}
+            >
+              {editSaving ? (
+                <ActivityIndicator color="#fff" size="small" />
+              ) : (
+                <Text style={styles.modalSaveBtnText}>Save Changes</Text>
+              )}
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
 
       {isLoading ? (
         <View style={styles.center}>
@@ -542,4 +645,46 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 20,
   },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'flex-end',
+  },
+  modalSheet: {
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 24,
+    paddingBottom: 40,
+    gap: 14,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
+  modalTitle: { fontSize: 18, fontWeight: '800', color: colors.textPrimary },
+  inputLabel: { fontSize: 12, fontWeight: '700', color: colors.textMuted, marginBottom: -8 },
+  input: {
+    backgroundColor: colors.background,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 15,
+    color: colors.textPrimary,
+  },
+  inputMultiline: { height: 72, textAlignVertical: 'top' },
+  modalError: { color: '#EF4444', fontSize: 13, fontWeight: '600' },
+  modalSaveBtn: {
+    backgroundColor: colors.accent,
+    borderRadius: 14,
+    height: 52,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 4,
+  },
+  modalSaveBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
 });

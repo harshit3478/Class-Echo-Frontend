@@ -2,32 +2,27 @@ import { useCallback, useMemo, useState } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
-import * as DocumentPicker from 'expo-document-picker';
 import {
   ActivityIndicator,
-  Alert,
-  Modal,
   Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '../context/AuthContext';
 import {
-  getTeacherSubjectRecordings,
-  getTeacherSubjectStudents,
-  uploadRecording,
+  getSchoolSubjectRecordings,
+  getSchoolSubjectStudents,
 } from '../lib/api';
 import { RootStackParamList } from '../navigation/AppNavigator';
 import { colors } from '../theme/colors';
 import { RecordingStatus, RecordingWithReport, StudentOut } from '../types/api';
 
-type Props = NativeStackScreenProps<RootStackParamList, 'TeacherSubjectDetail'>;
+type Props = NativeStackScreenProps<RootStackParamList, 'SchoolAdminSubjectDetail'>;
 
 type DetailTab = 'recordings' | 'students';
 
@@ -121,7 +116,7 @@ function StudentRow({ student }: { student: StudentOut }) {
   );
 }
 
-export function TeacherSubjectDetailScreen({ navigation, route }: Props) {
+export function SchoolAdminSubjectDetailScreen({ navigation, route }: Props) {
   const { session } = useAuth();
   const { subjectId, subjectName } = route.params;
 
@@ -131,14 +126,6 @@ export function TeacherSubjectDetailScreen({ navigation, route }: Props) {
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [uploading, setUploading] = useState(false);
-
-  const [showActionSheet, setShowActionSheet] = useState(false);
-  const [showUploadModal, setShowUploadModal] = useState(false);
-  const [pendingUri, setPendingUri] = useState<string | null>(null);
-  const [pendingMime, setPendingMime] = useState('audio/mpeg');
-  const [chapterName, setChapterName] = useState('');
-  const [description, setDescription] = useState('');
 
   const load = useCallback(
     async (silent = false) => {
@@ -147,8 +134,8 @@ export function TeacherSubjectDetailScreen({ navigation, route }: Props) {
       setError(null);
       try {
         const [recordingData, studentData] = await Promise.all([
-          getTeacherSubjectRecordings(session.token, subjectId),
-          getTeacherSubjectStudents(session.token, subjectId),
+          getSchoolSubjectRecordings(session.token, subjectId),
+          getSchoolSubjectStudents(session.token, subjectId),
         ]);
         setRecordings(recordingData);
         setStudents(studentData);
@@ -184,49 +171,6 @@ export function TeacherSubjectDetailScreen({ navigation, route }: Props) {
 
   const completedCount = recordings.filter((recording) => recording.status === 'completed').length;
 
-  const handlePickFile = async () => {
-    try {
-      const result = await DocumentPicker.getDocumentAsync({
-        type: ['audio/*', 'video/*'],
-        copyToCacheDirectory: true,
-      });
-      if (result.canceled || !result.assets?.[0]) return;
-      const asset = result.assets[0];
-      setPendingUri(asset.uri);
-      setPendingMime(asset.mimeType ?? 'audio/mpeg');
-      setChapterName('');
-      setDescription('');
-      setShowUploadModal(true);
-    } catch {
-      Alert.alert('Error', 'Could not open the file picker.');
-    }
-  };
-
-  const handleUpload = async () => {
-    if (!session || !pendingUri || !chapterName.trim() || uploading) return;
-    setUploading(true);
-    try {
-      const recording = await uploadRecording(
-        session.token,
-        subjectId,
-        pendingUri,
-        pendingMime,
-        chapterName.trim(),
-        description.trim() || undefined,
-      );
-      setRecordings((current) => [recording, ...current]);
-      setPendingUri(null);
-      setShowUploadModal(false);
-      setChapterName('');
-      setDescription('');
-      setActiveTab('recordings');
-    } catch (e) {
-      Alert.alert('Upload failed', e instanceof Error ? e.message : 'Could not upload recording.');
-    } finally {
-      setUploading(false);
-    }
-  };
-
   return (
     <SafeAreaView edges={['top']} style={styles.safe}>
       <View style={styles.header}>
@@ -254,10 +198,10 @@ export function TeacherSubjectDetailScreen({ navigation, route }: Props) {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.hero}>
-          <Text style={styles.heroKicker}>COURSE MODULE</Text>
+          <Text style={styles.heroKicker}>SUBJECT</Text>
           <Text style={styles.heroTitle}>{subjectName}</Text>
           <Text style={styles.heroBody}>
-            Record classes, upload files, and review roster details from one place.
+            Review uploaded recordings and the students attached to this class.
           </Text>
         </View>
 
@@ -315,7 +259,7 @@ export function TeacherSubjectDetailScreen({ navigation, route }: Props) {
             <View style={styles.center}>
               <Ionicons color={colors.textMuted} name="mic-outline" size={40} />
               <Text style={styles.emptyTitle}>No recordings yet</Text>
-              <Text style={styles.emptyBody}>Record or upload your first class recording below.</Text>
+              <Text style={styles.emptyBody}>Teacher uploads for this subject will appear here.</Text>
             </View>
           ) : (
             <View style={styles.sectionStack}>
@@ -340,7 +284,7 @@ export function TeacherSubjectDetailScreen({ navigation, route }: Props) {
           <View style={styles.center}>
             <Ionicons color={colors.textMuted} name="people-outline" size={40} />
             <Text style={styles.emptyTitle}>No students enrolled</Text>
-            <Text style={styles.emptyBody}>Students in this class will appear here.</Text>
+            <Text style={styles.emptyBody}>Students in the class attached to this subject will appear here.</Text>
           </View>
         ) : (
           <View style={styles.section}>
@@ -354,110 +298,6 @@ export function TeacherSubjectDetailScreen({ navigation, route }: Props) {
           </View>
         )}
       </ScrollView>
-
-      <View style={styles.footer}>
-        <Pressable
-          disabled={uploading}
-          onPress={() => setShowActionSheet(true)}
-          style={[styles.primaryButton, uploading && styles.primaryButtonDisabled]}
-        >
-          {uploading ? (
-            <ActivityIndicator color="#fff" size="small" />
-          ) : (
-            <Ionicons color="#fff" name="add" size={20} />
-          )}
-          <Text style={styles.primaryButtonText}>{uploading ? 'Uploading…' : 'Add Recording'}</Text>
-        </Pressable>
-      </View>
-
-      <Modal animationType="slide" transparent visible={showActionSheet} onRequestClose={() => setShowActionSheet(false)}>
-        <Pressable onPress={() => setShowActionSheet(false)} style={styles.modalOverlay}>
-          <Pressable style={styles.actionSheet}>
-            <View style={styles.modalHandle} />
-            <Text style={styles.modalTitle}>Add Recording</Text>
-            <Pressable
-              onPress={() => {
-                setShowActionSheet(false);
-                navigation.navigate('TeacherRecording', { subjectId, subjectName });
-              }}
-              style={styles.actionRow}
-            >
-              <View style={[styles.actionIcon, { backgroundColor: '#FEE2E2' }]}>
-                <Ionicons color="#EF4444" name="mic" size={20} />
-              </View>
-              <View style={styles.actionTextWrap}>
-                <Text style={styles.actionTitle}>Record Class</Text>
-                <Text style={styles.actionBody}>Use the in-app recorder for a live lecture.</Text>
-              </View>
-              <Ionicons color={colors.textMuted} name="chevron-forward" size={16} />
-            </Pressable>
-            <Pressable
-              onPress={() => {
-                setShowActionSheet(false);
-                void handlePickFile();
-              }}
-              style={styles.actionRow}
-            >
-              <View style={[styles.actionIcon, { backgroundColor: colors.accentSoft }]}>
-                <Ionicons color={colors.accent} name="document-attach-outline" size={20} />
-              </View>
-              <View style={styles.actionTextWrap}>
-                <Text style={styles.actionTitle}>Upload File</Text>
-                <Text style={styles.actionBody}>Pick an existing audio file from your device.</Text>
-              </View>
-              <Ionicons color={colors.textMuted} name="chevron-forward" size={16} />
-            </Pressable>
-          </Pressable>
-        </Pressable>
-      </Modal>
-
-      <Modal animationType="slide" transparent visible={showUploadModal} onRequestClose={() => setShowUploadModal(false)}>
-        <Pressable onPress={() => setShowUploadModal(false)} style={styles.modalOverlay}>
-          <Pressable style={styles.modalSheet}>
-            <View style={styles.modalHandle} />
-            <Text style={styles.modalTitle}>Recording Details</Text>
-            <View style={styles.field}>
-              <Text style={styles.fieldLabel}>CHAPTER NAME *</Text>
-              <TextInput
-                autoCapitalize="words"
-                autoFocus
-                onChangeText={setChapterName}
-                placeholder="e.g. Chapter 3 — Photosynthesis"
-                placeholderTextColor={colors.textPlaceholder}
-                style={styles.input}
-                value={chapterName}
-              />
-            </View>
-            <View style={styles.field}>
-              <Text style={styles.fieldLabel}>DESCRIPTION</Text>
-              <TextInput
-                autoCapitalize="sentences"
-                multiline
-                numberOfLines={4}
-                onChangeText={setDescription}
-                placeholder="Brief description of this recording…"
-                placeholderTextColor={colors.textPlaceholder}
-                style={[styles.input, styles.multilineInput]}
-                value={description}
-              />
-            </View>
-            <View style={styles.modalActions}>
-              <Pressable onPress={() => setShowUploadModal(false)} style={styles.secondaryButton}>
-                <Text style={styles.secondaryButtonText}>Cancel</Text>
-              </Pressable>
-              <Pressable
-                disabled={uploading || !chapterName.trim()}
-                onPress={() => {
-                  void handleUpload();
-                }}
-                style={[styles.primaryModalButton, (uploading || !chapterName.trim()) && styles.primaryButtonDisabled]}
-              >
-                <Text style={styles.primaryButtonText}>Upload</Text>
-              </Pressable>
-            </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
     </SafeAreaView>
   );
 }
@@ -481,7 +321,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: colors.textPrimary,
   },
-  scroll: { paddingBottom: 110, gap: 16 },
+  scroll: { paddingBottom: 40, gap: 16 },
   hero: {
     padding: 20,
     backgroundColor: colors.surface,
@@ -577,99 +417,4 @@ const styles = StyleSheet.create({
   center: { alignItems: 'center', padding: 40, gap: 10 },
   emptyTitle: { fontSize: 18, fontWeight: '800', color: colors.textPrimary },
   emptyBody: { fontSize: 14, lineHeight: 20, color: colors.textSecondary, textAlign: 'center' },
-  footer: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    backgroundColor: colors.surface,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-  },
-  primaryButton: {
-    height: 54,
-    borderRadius: 16,
-    backgroundColor: colors.accent,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-  },
-  primaryButtonDisabled: { opacity: 0.6 },
-  primaryButtonText: { color: '#fff', fontSize: 15, fontWeight: '700' },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)', justifyContent: 'flex-end' },
-  actionSheet: {
-    backgroundColor: colors.surface,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 20,
-    gap: 12,
-  },
-  modalSheet: {
-    backgroundColor: colors.surface,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 20,
-    gap: 16,
-  },
-  modalHandle: {
-    alignSelf: 'center',
-    width: 44,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: colors.border,
-  },
-  modalTitle: { fontSize: 20, fontWeight: '800', color: colors.textPrimary },
-  actionRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    paddingVertical: 8,
-  },
-  actionIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  actionTextWrap: { flex: 1, gap: 4 },
-  actionTitle: { fontSize: 15, fontWeight: '700', color: colors.textPrimary },
-  actionBody: { fontSize: 13, color: colors.textSecondary, lineHeight: 18 },
-  field: { gap: 8 },
-  fieldLabel: { fontSize: 11, fontWeight: '700', letterSpacing: 1, color: colors.textMuted },
-  input: {
-    minHeight: 48,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.background,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 15,
-    color: colors.textPrimary,
-  },
-  multilineInput: { minHeight: 110, textAlignVertical: 'top' },
-  modalActions: { flexDirection: 'row', gap: 12 },
-  secondaryButton: {
-    flex: 1,
-    height: 50,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surfaceMuted,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  secondaryButtonText: { fontSize: 15, fontWeight: '700', color: colors.textSecondary },
-  primaryModalButton: {
-    flex: 1,
-    height: 50,
-    borderRadius: 14,
-    backgroundColor: colors.accent,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
 });

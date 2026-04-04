@@ -234,16 +234,18 @@ function SubjectCard({
   subject,
   colorIdx,
   onAssignPress,
+  onCardPress,
 }: {
   subject: SubjectOut;
   colorIdx: number;
   onAssignPress: () => void;
+  onCardPress: () => void;
 }) {
   const c = SUBJECT_COLORS[colorIdx % SUBJECT_COLORS.length];
   const nameLetters = subject.name.slice(0, 1).toUpperCase();
 
   return (
-    <View style={styles.subjectCard}>
+    <Pressable onPress={onCardPress} style={styles.subjectCard}>
       <View style={styles.subjectCardTop}>
         <View style={[styles.subjectIcon, { backgroundColor: c.bg }]}>
           <Text style={[styles.subjectIconText, { color: c.text }]}>{nameLetters}</Text>
@@ -278,12 +280,15 @@ function SubjectCard({
             <Text style={styles.unassignedText}>No teacher assigned</Text>
           </View>
         )}
-        <Pressable onPress={onAssignPress} style={styles.assignBtn}>
+        <Pressable
+          onPress={(e) => { e.stopPropagation?.(); onAssignPress(); }}
+          style={styles.assignBtn}
+        >
           <Ionicons color={colors.accent} name="swap-horizontal" size={14} />
           <Text style={styles.assignBtnText}>{subject.teacher ? 'Change' : 'Assign'}</Text>
         </Pressable>
       </View>
-    </View>
+    </Pressable>
   );
 }
 
@@ -337,6 +342,7 @@ export function SchoolAdminClassDetailScreen({ navigation, route }: Props) {
     setEditClassError(null);
     try {
       await updateSchoolAdminClass(session.token, classId, { name: editClassName.trim() });
+      await load(true);
       setShowEditClass(false);
       navigation.setParams({ className: editClassName.trim() } as never);
     } catch (e) {
@@ -437,6 +443,12 @@ export function SchoolAdminClassDetailScreen({ navigation, route }: Props) {
                   key={subject.id}
                   colorIdx={idx}
                   onAssignPress={() => setAssignTarget(subject)}
+                  onCardPress={() =>
+                    navigation.navigate('SchoolAdminSubjectDetail', {
+                      subjectId: subject.id,
+                      subjectName: subject.name,
+                    })
+                  }
                   subject={subject}
                 />
               ))}

@@ -1,7 +1,7 @@
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
 import { useAuth } from '../context/AuthContext';
-import { UserRole } from '../types/api';
+import { RecordingWithReport, UserRole } from '../types/api';
 
 // Super Admin screens
 import { AdminCreateSchoolScreen } from '../screens/AdminCreateSchoolScreen';
@@ -14,6 +14,7 @@ import { SchoolAdminClassesScreen } from '../screens/SchoolAdminClassesScreen';
 import { SchoolAdminTeachersScreen } from '../screens/SchoolAdminTeachersScreen';
 import { SchoolAdminStudentsScreen } from '../screens/SchoolAdminStudentsScreen';
 import { SchoolAdminProfileScreen } from '../screens/SchoolAdminProfileScreen';
+import { SchoolAdminSubjectDetailScreen } from '../screens/SchoolAdminSubjectDetailScreen';
 
 // Auth screens
 import { LoginScreen } from '../screens/LoginScreen';
@@ -25,8 +26,9 @@ import { StudentProfileScreen } from '../screens/StudentProfileScreen';
 import { StudentSubjectDetailScreen } from '../screens/StudentSubjectDetailScreen';
 
 // Teacher screens
+import { RecordingDetailScreen } from '../screens/RecordingDetailScreen';
+import { RecordingScreen } from '../screens/RecordingScreen';
 import { TeacherProfileScreen } from '../screens/TeacherProfileScreen';
-import { TeacherRecordingReportScreen } from '../screens/TeacherRecordingReportScreen';
 import { TeacherSubjectDetailScreen } from '../screens/TeacherSubjectDetailScreen';
 import { TeacherSubjectsScreen } from '../screens/TeacherSubjectsScreen';
 
@@ -44,11 +46,13 @@ export type RootStackParamList = {
   SchoolAdminTeachers: undefined;
   SchoolAdminStudents: undefined;
   SchoolAdminProfile: undefined;
+  SchoolAdminSubjectDetail: { subjectId: number; subjectName: string };
   // Teacher
   TeacherSubjects: undefined;
   TeacherSubjectDetail: { subjectId: number; subjectName: string };
-  TeacherRecordingReport: { recordingId: number; subjectName: string };
+  TeacherRecording: { subjectId: number; subjectName: string };
   TeacherProfile: undefined;
+  RecordingDetail: { recording: RecordingWithReport; subjectName: string };
   // Student
   StudentHome: undefined;
   StudentSubjectDetail: { subjectId: number; subjectName: string };
@@ -98,19 +102,23 @@ export function AppNavigator() {
           <Stack.Screen name="SchoolAdminTeachers" component={SchoolAdminTeachersScreen} />
           <Stack.Screen name="SchoolAdminStudents" component={SchoolAdminStudentsScreen} />
           <Stack.Screen name="SchoolAdminProfile" component={SchoolAdminProfileScreen} />
+          <Stack.Screen name="SchoolAdminSubjectDetail" component={SchoolAdminSubjectDetailScreen} />
+          <Stack.Screen name="RecordingDetail" component={RecordingDetailScreen} />
         </>
       ) : session.role === 'teacher' ? (
         <>
           <Stack.Screen name="TeacherSubjects" component={TeacherSubjectsScreen} />
           <Stack.Screen name="TeacherSubjectDetail" component={TeacherSubjectDetailScreen} />
-          <Stack.Screen name="TeacherRecordingReport" component={TeacherRecordingReportScreen} />
+          <Stack.Screen name="TeacherRecording" component={RecordingScreen} />
           <Stack.Screen name="TeacherProfile" component={TeacherProfileScreen} />
+          <Stack.Screen name="RecordingDetail" component={RecordingDetailScreen} />
         </>
       ) : (
         <>
           <Stack.Screen name="StudentHome" component={StudentHomeScreen} />
           <Stack.Screen name="StudentSubjectDetail" component={StudentSubjectDetailScreen} />
           <Stack.Screen name="StudentProfile" component={StudentProfileScreen} />
+          <Stack.Screen name="RecordingDetail" component={RecordingDetailScreen} />
         </>
       )}
     </Stack.Navigator>
