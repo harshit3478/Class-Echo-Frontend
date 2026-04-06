@@ -29,6 +29,14 @@ class ApiError extends Error {
   }
 }
 
+function debugLog(label: string, payload?: unknown) {
+  console.log(`[api] ${label}`, payload ?? '');
+}
+
+function debugError(label: string, payload?: unknown) {
+  console.error(`[api] ${label}`, payload ?? '');
+}
+
 function appendFile(
   form: FormData,
   fieldName: string,
@@ -36,16 +44,41 @@ function appendFile(
   mimeType: string,
   fallbackPrefix: string,
 ) {
-  const normalizedType = normalizeMimeType(fileUri, mimeType);
-  const ext = inferFileExtension(fileUri, normalizedType);
+  const uploadUri = normalizeUploadUri(fileUri);
+  const normalizedType = normalizeMimeType(uploadUri, mimeType);
+  const ext = inferFileExtension(uploadUri, normalizedType);
+  debugLog('appendFile', {
+    fieldName,
+    originalUri: fileUri,
+    uploadUri,
+    normalizedType,
+    ext,
+  });
   form.append(
     fieldName,
     {
-      uri: fileUri,
+      uri: uploadUri,
       type: normalizedType,
       name: `${fallbackPrefix}_${Date.now()}.${ext}`,
     } as unknown as Blob,
   );
+}
+
+function normalizeUploadUri(fileUri: string) {
+  if (
+    fileUri.startsWith('file://')
+    || fileUri.startsWith('content://')
+    || fileUri.startsWith('http://')
+    || fileUri.startsWith('https://')
+  ) {
+    return fileUri;
+  }
+
+  if (fileUri.startsWith('/')) {
+    return `file://${fileUri}`;
+  }
+
+  return fileUri;
 }
 
 function normalizeMimeType(fileUri: string, mimeType?: string | null) {
@@ -113,6 +146,13 @@ async function request<T>(
     headers.set('Authorization', `Bearer ${token}`);
   }
 
+  debugLog('request:start', {
+    path,
+    method: init.method ?? 'GET',
+    hasToken: Boolean(token),
+    isFormData: init.body instanceof FormData,
+  });
+
   let response: Response;
   try {
     response = await fetch(`${API_BASE_URL}${path}`, {
@@ -120,6 +160,13 @@ async function request<T>(
       headers,
     });
   } catch (error) {
+    debugError('request:network_error', {
+      path,
+      method: init.method ?? 'GET',
+      hasToken: Boolean(token),
+      isFormData: init.body instanceof FormData,
+      error,
+    });
     const message =
       error instanceof Error && error.message
         ? error.message
@@ -127,9 +174,22 @@ async function request<T>(
     throw new ApiError(message, 0);
   }
 
+  debugLog('request:response', {
+    path,
+    method: init.method ?? 'GET',
+    status: response.status,
+    ok: response.ok,
+  });
+
   if (!response.ok) {
     let message = 'Request failed';
     const raw = await response.text();
+    debugError('request:http_error', {
+      path,
+      method: init.method ?? 'GET',
+      status: response.status,
+      raw,
+    });
     if (raw) {
       try {
         const body = JSON.parse(raw) as { detail?: string; message?: string };
@@ -381,7 +441,18 @@ export async function uploadRecording(
   description?: string,
 ) {
   const form = new FormData();
-  appendFile(form, 'file', fileUri, mimeType, 'recording');
+  const normalizedType = normalizeMimeType(fileUri, mimeType);
+  const inferredExt = inferFileExtension(fileUri, normalizedType);
+  debugLog('uploadRecording:prepare', {
+    subjectId,
+    fileUri,
+    mimeType,
+    normalizedType,
+    inferredExt,
+    chapterName,
+    hasDescription: Boolean(description),
+  });
+  appendFile(form, 'file', fileUri, normalizedType, 'recording');
   if (chapterName) form.append('chapter_name', chapterName);
   if (description) form.append('description', description);
   return request<RecordingWithReport>(

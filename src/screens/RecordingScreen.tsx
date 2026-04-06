@@ -70,14 +70,6 @@ export function RecordingScreen({ navigation, route }: Props) {
     setMeterBars((current) => [...current.slice(-35), normalizeMeteringValue(recorderState.metering)]);
   }, [recorderState.metering, state]);
 
-  useEffect(() => {
-    return () => {
-      if (recorder.getStatus().isRecording) {
-        void recorder.stop().catch(() => undefined);
-      }
-    };
-  }, [recorder]);
-
   const previewBars = useMemo(() => {
     if (meterBars.length > 0) {
       return meterBars;
@@ -181,17 +173,39 @@ export function RecordingScreen({ navigation, route }: Props) {
     }
 
     setUploading(true);
+    const resolvedMime = inferMimeTypeFromUri(recordedUri, 'audio/mp4');
+    const uploadUri = recordedUri.startsWith('/') ? `file://${recordedUri}` : recordedUri;
+    console.log('[recording] upload:start', {
+      subjectId,
+      subjectName,
+      recordedUri,
+      uploadUri,
+      resolvedMime,
+      chapterName: chapterName.trim(),
+      hasDescription: Boolean(description.trim()),
+    });
     try {
       await uploadRecording(
         session.token,
         subjectId,
         recordedUri,
-        inferMimeTypeFromUri(recordedUri, 'audio/mp4'),
+        resolvedMime,
         chapterName.trim(),
         description.trim() || undefined,
       );
+      console.log('[recording] upload:success', {
+        subjectId,
+        recordedUri,
+      });
       navigation.goBack();
     } catch (e) {
+      console.error('[recording] upload:failure', {
+        subjectId,
+        subjectName,
+        recordedUri,
+        resolvedMime,
+        error: e,
+      });
       Alert.alert('Upload failed', e instanceof Error ? e.message : 'Could not upload recording.');
     } finally {
       setUploading(false);

@@ -244,6 +244,14 @@ export function TeacherSubjectDetailScreen({ navigation, route }: Props) {
     }
 
     setUploading(true);
+    console.log('[teacher-subject] upload:start', {
+      subjectId,
+      subjectName,
+      pendingUri,
+      pendingMime,
+      chapterName: chapterName.trim(),
+      hasDescription: Boolean(description.trim()),
+    });
     try {
       const recording = await uploadRecording(
         session.token,
@@ -256,7 +264,19 @@ export function TeacherSubjectDetailScreen({ navigation, route }: Props) {
       setRecordings((current) => [recording, ...current]);
       await closeUploadModal();
       setActiveTab('recordings');
+      console.log('[teacher-subject] upload:success', {
+        subjectId,
+        pendingUri,
+        recordingId: recording.id,
+      });
     } catch (e) {
+      console.error('[teacher-subject] upload:failure', {
+        subjectId,
+        subjectName,
+        pendingUri,
+        pendingMime,
+        error: e,
+      });
       Alert.alert('Upload failed', e instanceof Error ? e.message : 'Could not upload recording.');
     } finally {
       setUploading(false);
