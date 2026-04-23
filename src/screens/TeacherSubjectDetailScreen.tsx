@@ -21,7 +21,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { AudioWaveform } from '../components/AudioWaveform';
 import { useAuth } from '../context/AuthContext';
 import { buildWaveformBars, formatAudioTime, inferMimeTypeFromUri, isAudioMimeType } from '../lib/audio';
-import { getTeacherSubjectRecordings, getTeacherSubjectStudents, uploadRecording } from '../lib/api';
+import { getTeacherSubjectRecordings, getTeacherSubjectStudents, retryRecording, uploadRecording } from '../lib/api';
 import { RootStackParamList } from '../navigation/AppNavigator';
 import { colors } from '../theme/colors';
 import { RecordingStatus, RecordingWithReport, StudentOut } from '../types/api';
@@ -54,9 +54,13 @@ function statusStyle(status: RecordingStatus) {
 function RecordingRow({
   recording,
   onPress,
+  onRetry,
+  retrying,
 }: {
   recording: RecordingWithReport;
   onPress: () => void;
+  onRetry: () => void;
+  retrying: boolean;
 }) {
   const status = statusStyle(recording.status);
 
@@ -91,7 +95,21 @@ function RecordingRow({
         <View style={[styles.statusBadge, { backgroundColor: status.bg }]}>
           <Text style={[styles.statusText, { color: status.text }]}>{status.label}</Text>
         </View>
-        <Ionicons color={colors.textMuted} name="chevron-forward" size={16} />
+        {recording.status === 'failed' ? (
+          <Pressable
+            disabled={retrying}
+            hitSlop={8}
+            onPress={(e) => { e.stopPropagation(); onRetry(); }}
+            style={styles.retryIcon}
+          >
+            {retrying
+              ? <ActivityIndicator color="#B42318" size="small" />
+              : <Ionicons color="#B42318" name="refresh-outline" size={18} />
+            }
+          </Pressable>
+        ) : (
+          <Ionicons color={colors.textMuted} name="chevron-forward" size={16} />
+        )}
       </View>
     </Pressable>
   );
@@ -134,7 +152,9 @@ export function TeacherSubjectDetailScreen({ navigation, route }: Props) {
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [retryingId, setRetryingId] = useState<number | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
 
   const [showActionSheet, setShowActionSheet] = useState(false);
   const [showUploadModal, setShowUploadModal] = useState(false);
@@ -244,14 +264,7 @@ export function TeacherSubjectDetailScreen({ navigation, route }: Props) {
     }
 
     setUploading(true);
-    console.log('[teacher-subject] upload:start', {
-      subjectId,
-      subjectName,
-      pendingUri,
-      pendingMime,
-      chapterName: chapterName.trim(),
-      hasDescription: Boolean(description.trim()),
-    });
+    setUploadProgress(0);
     try {
       const recording = await uploadRecording(
         session.token,
@@ -260,6 +273,7 @@ export function TeacherSubjectDetailScreen({ navigation, route }: Props) {
         pendingMime,
         chapterName.trim(),
         description.trim() || undefined,
+        setUploadProgress,
       );
       setRecordings((current) => [recording, ...current]);
       await closeUploadModal();
@@ -280,6 +294,21 @@ export function TeacherSubjectDetailScreen({ navigation, route }: Props) {
       Alert.alert('Upload failed', e instanceof Error ? e.message : 'Could not upload recording.');
     } finally {
       setUploading(false);
+    }
+  };
+
+  const handleRetry = async (recordingId: number) => {
+    if (!session || retryingId !== null) return;
+    setRetryingId(recordingId);
+    try {
+      const updated = await retryRecording(session.token, recordingId);
+      setRecordings((current) =>
+        current.map((r) => (r.id === recordingId ? updated : r)),
+      );
+    } catch (e) {
+      Alert.alert('Retry failed', e instanceof Error ? e.message : 'Could not queue retry.');
+    } finally {
+      setRetryingId(null);
     }
   };
 
@@ -408,7 +437,9 @@ export function TeacherSubjectDetailScreen({ navigation, route }: Props) {
                     <RecordingRow
                       key={recording.id}
                       onPress={() => navigation.navigate('RecordingDetail', { recording, subjectName })}
+                      onRetry={() => void handleRetry(recording.id)}
                       recording={recording}
+                      retrying={retryingId === recording.id}
                     />
                   ))}
                 </View>
@@ -536,8 +567,15 @@ export function TeacherSubjectDetailScreen({ navigation, route }: Props) {
                 style={[styles.primaryButton, (!chapterName.trim() || uploading) && styles.buttonDisabled]}
               >
                 {uploading ? <ActivityIndicator color="#fff" size="small" /> : null}
-                <Text style={styles.primaryButtonText}>{uploading ? 'Uploading…' : 'Upload'}</Text>
+                <Text style={styles.primaryButtonText}>
+                  {uploading ? `Uploading… ${uploadProgress}%` : 'Upload'}
+                </Text>
               </Pressable>
+              {uploading ? (
+                <View style={styles.progressTrack}>
+                  <View style={[styles.progressFill, { width: `${uploadProgress}%` as unknown as number }]} />
+                </View>
+              ) : null}
             </View>
           </Pressable>
         </Pressable>
@@ -648,6 +686,7 @@ const styles = StyleSheet.create({
   cardRight: { alignItems: 'flex-end', gap: 8 },
   statusBadge: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999 },
   statusText: { fontSize: 11, fontWeight: '700' },
+  retryIcon: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center' },
   studentAvatar: {
     width: 42,
     height: 42,
@@ -766,4 +805,16 @@ const styles = StyleSheet.create({
   },
   primaryButtonText: { fontSize: 15, fontWeight: '800', color: '#fff' },
   buttonDisabled: { opacity: 0.55 },
+  progressTrack: {
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.border,
+    overflow: 'hidden',
+    marginTop: 8,
+  },
+  progressFill: {
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.accent,
+  },
 });

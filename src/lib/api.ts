@@ -13,12 +13,14 @@ import {
   TokenResponse,
 } from '../types/api';
 
+import { notifyUnauthorized } from './authSession';
+
 // Switch to local backend for development:
 // Android emulator: 'http://10.0.2.2:8000'
 // iOS simulator / Expo Go on device: 'http://localhost:8000'
-// Production: 'https://class-echo-backend-production.up.railway.app'
+// Production: 'http://104.154.218.1:8000'
 const API_BASE_URL =
-  'https://class-echo-backend-production.up.railway.app';
+  'http://104.154.218.1:8000';
 
 class ApiError extends Error {
   status: number;
@@ -182,6 +184,9 @@ async function request<T>(
   });
 
   if (!response.ok) {
+    if (response.status === 401 && token) {
+      notifyUnauthorized();
+    }
     let message = 'Request failed';
     const raw = await response.text();
     debugError('request:http_error', {
@@ -307,6 +312,10 @@ export async function getAdminSubjectRecordings(
     {},
     token,
   );
+}
+
+export async function deleteAdminRecording(token: string, recordingId: number) {
+  return request<void>(`/admin/recordings/${recordingId}`, { method: 'DELETE' }, token);
 }
 
 export async function getSchoolAdminClasses(token: string) {
@@ -439,31 +448,54 @@ export async function uploadRecording(
   mimeType: string,
   chapterName?: string,
   description?: string,
-) {
+  onProgress?: (pct: number) => void,
+): Promise<RecordingWithReport> {
   const form = new FormData();
   const normalizedType = normalizeMimeType(fileUri, mimeType);
-  const inferredExt = inferFileExtension(fileUri, normalizedType);
-  debugLog('uploadRecording:prepare', {
-    subjectId,
-    fileUri,
-    mimeType,
-    normalizedType,
-    inferredExt,
-    chapterName,
-    hasDescription: Boolean(description),
-  });
   appendFile(form, 'file', fileUri, normalizedType, 'recording');
   if (chapterName) form.append('chapter_name', chapterName);
   if (description) form.append('description', description);
-  return request<RecordingWithReport>(
-    `/teacher/subjects/${subjectId}/recordings`,
-    { method: 'POST', body: form, headers: {} },
-    token,
-  );
+
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `${API_BASE_URL}/teacher/subjects/${subjectId}/recordings`);
+    xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && onProgress) {
+        onProgress(Math.round((e.loaded / e.total) * 100));
+      }
+    };
+
+    xhr.onload = () => {
+      if (xhr.status === 401) {
+        notifyUnauthorized();
+      }
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          resolve(JSON.parse(xhr.responseText) as RecordingWithReport);
+        } catch {
+          reject(new ApiError('Invalid response from server', xhr.status));
+        }
+      } else {
+        reject(new ApiError(`Upload failed (${xhr.status})`, xhr.status));
+      }
+    };
+
+    xhr.onerror = () => reject(new ApiError('Network request failed', 0));
+    xhr.ontimeout = () => reject(new ApiError('Upload timed out', 0));
+    xhr.timeout = 10 * 60 * 1000; // 10 min for large files
+
+    xhr.send(form);
+  });
 }
 
 export async function getTeacherRecordingReport(token: string, recordingId: number) {
   return request<LLMReportOut>(`/teacher/recordings/${recordingId}/report`, {}, token);
+}
+
+export async function retryRecording(token: string, recordingId: number) {
+  return request<RecordingWithReport>(`/teacher/recordings/${recordingId}/retry`, { method: 'POST' }, token);
 }
 
 export async function updateTeacherMe(
