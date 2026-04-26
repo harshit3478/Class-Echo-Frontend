@@ -5,6 +5,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import {
   ActivityIndicator,
   FlatList,
+  Image,
   Pressable,
   RefreshControl,
   StyleSheet,
@@ -162,7 +163,11 @@ export function SchoolAdminStudentsScreen({ navigation }: Props) {
                   return (
                     <View key={student.id} style={styles.studentRow}>
                       <View style={styles.studentAvatar}>
-                        <Text style={styles.studentAvatarText}>{initials}</Text>
+                        {student.profile_image_url ? (
+                          <Image source={{ uri: student.profile_image_url }} style={styles.studentAvatarImage} />
+                        ) : (
+                          <Text style={styles.studentAvatarText}>{initials}</Text>
+                        )}
                       </View>
                       <View style={styles.studentInfo}>
                         <Text style={styles.studentName}>{student.name}</Text>
@@ -268,6 +273,7 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   studentAvatarText: { color: colors.textSecondary, fontSize: 13, fontWeight: '800' },
+  studentAvatarImage: { width: 40, height: 40, borderRadius: 20 },
   studentInfo: { flex: 1, gap: 2 },
   studentName: { fontSize: 15, fontWeight: '700', color: colors.textPrimary },
   studentEmail: { fontSize: 12, color: colors.textMuted },

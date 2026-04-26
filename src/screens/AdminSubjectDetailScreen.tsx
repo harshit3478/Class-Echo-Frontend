@@ -4,6 +4,7 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
 import {
   ActivityIndicator,
+  Alert,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -14,7 +15,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '../context/AuthContext';
-import { getAdminSubjectRecordings, getAdminSubjectStudents } from '../lib/api';
+import { deleteAdminRecording, getAdminSubjectRecordings, getAdminSubjectStudents } from '../lib/api';
 import { formatAudioTime } from '../lib/audio';
 import { RootStackParamList } from '../navigation/AppNavigator';
 import { colors } from '../theme/colors';
@@ -40,11 +41,25 @@ function statusStyle(status: RecordingStatus) {
 function RecordingRow({
   recording,
   onPress,
+  onDelete,
 }: {
   recording: RecordingWithReport;
   onPress: () => void;
+  onDelete: () => void;
 }) {
   const status = statusStyle(recording.status);
+
+  const handleDelete = () => {
+    Alert.alert(
+      'Delete Recording',
+      `Delete "${recording.chapter_name ?? `Recording #${recording.id}`}"? This cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete', style: 'destructive', onPress: onDelete },
+      ],
+    );
+  };
+
   return (
     <Pressable onPress={onPress} style={styles.card}>
       <View style={styles.cardIcon}>
@@ -76,7 +91,9 @@ function RecordingRow({
         <View style={[styles.statusBadge, { backgroundColor: status.bg }]}>
           <Text style={[styles.statusText, { color: status.text }]}>{status.label}</Text>
         </View>
-        <Ionicons color={colors.textMuted} name="chevron-forward" size={16} />
+        <Pressable hitSlop={8} onPress={handleDelete} style={styles.deleteBtn}>
+          <Ionicons color="#B42318" name="trash-outline" size={16} />
+        </Pressable>
       </View>
     </Pressable>
   );
@@ -162,6 +179,19 @@ export function AdminSubjectDetailScreen({ navigation, route }: Props) {
   }, [recordings]);
 
   const completedCount = recordings.filter((recording) => recording.status === 'completed').length;
+
+  const handleDelete = useCallback(
+    async (recordingId: number) => {
+      if (!session) return;
+      try {
+        await deleteAdminRecording(session.token, recordingId);
+        setRecordings((prev) => prev.filter((r) => r.id !== recordingId));
+      } catch {
+        Alert.alert('Error', 'Could not delete recording. Please try again.');
+      }
+    },
+    [session],
+  );
 
   return (
     <SafeAreaView edges={['top']} style={styles.safe}>
@@ -264,6 +294,7 @@ export function AdminSubjectDetailScreen({ navigation, route }: Props) {
                   {group.items.map((recording) => (
                     <RecordingRow
                       key={recording.id}
+                      onDelete={() => void handleDelete(recording.id)}
                       onPress={() => navigation.navigate('RecordingDetail', { recording, subjectName })}
                       recording={recording}
                     />
@@ -385,6 +416,7 @@ const styles = StyleSheet.create({
   cardRight: { alignItems: 'flex-end', gap: 8 },
   statusBadge: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999 },
   statusText: { fontSize: 11, fontWeight: '700' },
+  deleteBtn: { padding: 4 },
   studentAvatar: {
     width: 42,
     height: 42,

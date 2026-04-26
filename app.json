@@ -26,6 +26,7 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
+      "usesCleartextTraffic": true,
       "package": "com.iamharry.classecho",
       "permissions": [
         "android.permission.RECORD_AUDIO",
@@ -42,7 +43,8 @@
     },
     "owner": "iamharry",
     "plugins": [
-      "expo-audio"
+      "expo-audio",
+      "expo-secure-store"
     ]
   }
 }

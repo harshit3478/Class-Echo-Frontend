@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
@@ -15,10 +15,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { TeacherTabBar } from '../components/TeacherTabBar';
 import { useAuth } from '../context/AuthContext';
-import { getTeacherSubjects } from '../lib/api';
+import { getTeacherMe, getTeacherSubjects } from '../lib/api';
 import { RootStackParamList } from '../navigation/AppNavigator';
 import { colors } from '../theme/colors';
-import { SubjectOut } from '../types/api';
+import { SubjectOut, TeacherOut } from '../types/api';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'TeacherSubjects'>;
 
@@ -45,7 +45,9 @@ function SubjectCard({
     <Pressable onPress={onPress} style={styles.card}>
       {/* Class label kicker */}
       <View style={styles.cardKickerRow}>
-        <Text style={[styles.cardKicker, { color: c.text }]}>CLASS {subject.class_id}</Text>
+        <Text style={[styles.cardKicker, { color: c.text }]}>
+          {subject.class_?.name ?? `CLASS ${subject.class_id}`}
+        </Text>
       </View>
 
       {/* Subject name + arrow */}
@@ -77,12 +79,26 @@ function SubjectCard({
   );
 }
 
+type SubjectGroup = { className: string; subjects: SubjectOut[] };
+
 export function TeacherSubjectsScreen({ navigation }: Props) {
   const { session } = useAuth();
   const [subjects, setSubjects] = useState<SubjectOut[]>([]);
+  const [teacher, setTeacher] = useState<TeacherOut | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const groupedSubjects = useMemo<SubjectGroup[]>(() => {
+    const map = new Map<string, SubjectOut[]>();
+    for (const s of subjects) {
+      const key = s.class_?.name ?? `Class ${s.class_id}`;
+      const bucket = map.get(key) ?? [];
+      bucket.push(s);
+      map.set(key, bucket);
+    }
+    return Array.from(map.entries()).map(([className, list]) => ({ className, subjects: list }));
+  }, [subjects]);
 
   const load = useCallback(
     async (silent = false) => {
@@ -90,7 +106,12 @@ export function TeacherSubjectsScreen({ navigation }: Props) {
       if (!silent) setIsLoading(true);
       setError(null);
       try {
-        setSubjects(await getTeacherSubjects(session.token));
+        const [subs, me] = await Promise.all([
+          getTeacherSubjects(session.token),
+          getTeacherMe(session.token),
+        ]);
+        setSubjects(subs);
+        setTeacher(me);
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Could not load subjects');
       } finally {
@@ -125,6 +146,9 @@ export function TeacherSubjectsScreen({ navigation }: Props) {
       >
         {/* Page heading */}
         <View style={styles.pageHeading}>
+          {teacher?.school_name ? (
+            <Text style={styles.schoolKicker}>{teacher.school_name.toUpperCase()}</Text>
+          ) : null}
           <Text style={styles.pageTitle}>My Subjects</Text>
           <Text style={styles.pageSubtitle}>
             Manage your assigned classes and track recordings.
@@ -155,18 +179,23 @@ export function TeacherSubjectsScreen({ navigation }: Props) {
           </View>
         ) : (
           <View style={styles.list}>
-            {subjects.map((subject, idx) => (
-              <SubjectCard
-                key={subject.id}
-                colorIdx={idx}
-                onPress={() =>
-                  navigation.navigate('TeacherSubjectDetail', {
-                    subjectId: subject.id,
-                    subjectName: subject.name,
-                  })
-                }
-                subject={subject}
-              />
+            {groupedSubjects.map((group) => (
+              <View key={group.className} style={styles.classGroup}>
+                <Text style={styles.classGroupHeader}>{group.className}</Text>
+                {group.subjects.map((subject, idx) => (
+                  <SubjectCard
+                    key={subject.id}
+                    colorIdx={idx}
+                    onPress={() =>
+                      navigation.navigate('TeacherSubjectDetail', {
+                        subjectId: subject.id,
+                        subjectName: subject.name,
+                      })
+                    }
+                    subject={subject}
+                  />
+                ))}
+              </View>
             ))}
           </View>
         )}
@@ -217,6 +246,12 @@ const styles = StyleSheet.create({
     gap: 20,
   },
   pageHeading: { gap: 6 },
+  schoolKicker: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 1.2,
+    color: colors.accent,
+  },
   pageTitle: {
     color: colors.textPrimary,
     fontSize: 32,
@@ -236,7 +271,15 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   retryText: { color: colors.accentDark, fontWeight: '700', fontSize: 14 },
-  list: { gap: 16 },
+  list: { gap: 24 },
+  classGroup: { gap: 14 },
+  classGroupHeader: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1.4,
+    color: colors.textMuted,
+    textTransform: 'uppercase',
+  },
 
   // Subject Card
   card: {

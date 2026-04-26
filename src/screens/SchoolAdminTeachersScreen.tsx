@@ -4,6 +4,7 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
 import {
   ActivityIndicator,
+  Image,
   Modal,
   Pressable,
   RefreshControl,
@@ -172,7 +173,11 @@ function TeacherCard({ teacher }: { teacher: TeacherOut }) {
     <View style={styles.card}>
       <View style={styles.cardTop}>
         <View style={styles.avatar}>
-          <Text style={styles.avatarText}>{initials}</Text>
+          {teacher.profile_image_url ? (
+            <Image source={{ uri: teacher.profile_image_url }} style={styles.avatarImage} />
+          ) : (
+            <Text style={styles.avatarText}>{initials}</Text>
+          )}
         </View>
         <View style={styles.cardInfo}>
           <Text style={styles.cardName}>{teacher.name}</Text>
@@ -426,6 +431,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   avatarText: { color: colors.accentDark, fontSize: 16, fontWeight: '800' },
+  avatarImage: { width: 48, height: 48, borderRadius: 24 },
   cardInfo: { flex: 1, gap: 3 },
   cardName: { color: colors.textPrimary, fontSize: 16, fontWeight: '700' },
   cardEmail: { color: colors.textSecondary, fontSize: 13 },

@@ -43,6 +43,8 @@ export type TeacherOut = {
   name: string;
   email: string;
   profile_image_url: string | null;
+  school_id: number | null;
+  school_name: string | null;
   created_at: string;
 };
 
@@ -64,14 +66,46 @@ export type SchoolAdminProfileOut = {
   created_at: string;
 };
 
+export type ClassBrief = {
+  id: number;
+  name: string;
+};
+
 export type SubjectOut = {
   id: number;
   name: string;
   profile_image_url: string | null;
   class_id: number;
+  class_: ClassBrief | null;
   teacher_id: number | null;
   teacher: TeacherBrief | null;
   created_at: string;
+};
+
+export type DimensionScore = {
+  score: number;
+  finding: string;
+  evidence: string[];
+};
+
+export type ScoreBreakdown = {
+  verbal_clarity: DimensionScore;
+  pacing_delivery: DimensionScore;
+  content_structure: DimensionScore;
+  conceptual_depth: DimensionScore;
+  student_engagement: DimensionScore;
+  language_accessibility: DimensionScore;
+  closure_recap: DimensionScore;
+};
+
+export type QuantitativeMetrics = {
+  wpm_estimate: number;
+  filler_words_heard: number;
+  questions_asked: number;
+  languages_detected: string[];
+  code_switching_frequency: 'none' | 'low' | 'medium' | 'high';
+  top_strengths: string[];
+  priority_improvements: string[];
 };
 
 export type LLMReportOut = {
@@ -79,8 +113,8 @@ export type LLMReportOut = {
   recording_id: number;
   overall_score: number | null;
   teaching_quality_notes: string | null;
-  strengths: string | null;
-  improvements: string | null;
+  score_breakdown: ScoreBreakdown | null;
+  quantitative_metrics: QuantitativeMetrics | null;
   created_at: string;
 };
 

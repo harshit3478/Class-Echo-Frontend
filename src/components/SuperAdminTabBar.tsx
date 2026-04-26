@@ -11,10 +11,7 @@ type Tab = {
 };
 
 const TABS: Tab[] = [
-  { key: 'home', label: 'Home', icon: 'home-outline', activeIcon: 'home' },
   { key: 'schools', label: 'Schools', icon: 'school-outline', activeIcon: 'school' },
-  { key: 'users', label: 'Users', icon: 'people-outline', activeIcon: 'people' },
-  { key: 'settings', label: 'Settings', icon: 'settings-outline', activeIcon: 'settings' },
 ];
 
 type Props = {

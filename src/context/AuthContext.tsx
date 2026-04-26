@@ -3,12 +3,19 @@ import {
   PropsWithChildren,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useState,
 } from 'react';
 
+import * as SecureStore from 'expo-secure-store';
+
 import { login } from '../lib/api';
+import { setUnauthorizedHandler } from '../lib/authSession';
 import { UserRole } from '../types/api';
+
+const TOKEN_KEY = 'auth_token';
+const ROLE_KEY = 'auth_role';
 
 type Session = {
   token: string;
@@ -27,28 +34,59 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: PropsWithChildren) {
   const [session, setSession] = useState<Session | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    async function loadSession() {
+      try {
+        const token = await SecureStore.getItemAsync(TOKEN_KEY);
+        const role = await SecureStore.getItemAsync(ROLE_KEY);
+        if (token && role) {
+          setSession({ token, role: role as UserRole });
+        }
+      } catch {
+        // ignore storage errors on load
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    loadSession();
+  }, []);
+
+  const persistSession = useCallback(async (token: string, role: UserRole) => {
+    await SecureStore.setItemAsync(TOKEN_KEY, token);
+    await SecureStore.setItemAsync(ROLE_KEY, role);
+  }, []);
 
   const signIn = useCallback(async (username: string, password: string) => {
     setIsLoading(true);
     try {
       const response = await login(username, password);
-      setSession({
-        token: response.access_token,
-        role: response.role,
-      });
+      const newSession = { token: response.access_token, role: response.role };
+      await persistSession(newSession.token, newSession.role);
+      setSession(newSession);
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [persistSession]);
 
-  const signInDirect = useCallback((token: string, role: UserRole) => {
+  const signInDirect = useCallback(async (token: string, role: UserRole) => {
+    await persistSession(token, role);
     setSession({ token, role });
-  }, []);
+  }, [persistSession]);
 
-  const signOut = useCallback(() => {
+  const signOut = useCallback(async () => {
+    await SecureStore.deleteItemAsync(TOKEN_KEY);
+    await SecureStore.deleteItemAsync(ROLE_KEY);
     setSession(null);
   }, []);
+
+  useEffect(() => {
+    setUnauthorizedHandler(() => {
+      void signOut();
+    });
+    return () => setUnauthorizedHandler(null);
+  }, [signOut]);
 
   const value = useMemo(
     () => ({
