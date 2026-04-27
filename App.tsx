@@ -1,4 +1,6 @@
 import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
+import { Feather, Ionicons } from '@expo/vector-icons';
+import { useFonts } from 'expo-font';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 
@@ -20,6 +22,13 @@ const navigationTheme = {
 };
 
 export default function App() {
+  const [fontsLoaded] = useFonts({
+    ...Ionicons.font,
+    ...Feather.font,
+  });
+
+  if (!fontsLoaded) return null;
+
   return (
     <SafeAreaProvider>
       <AuthProvider>
