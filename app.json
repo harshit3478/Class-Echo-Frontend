@@ -44,7 +44,8 @@
     "owner": "iamharry",
     "plugins": [
       "expo-audio",
-      "expo-secure-store"
+      "expo-secure-store",
+      "./plugins/withCleartextTraffic"
     ]
   }
 }
