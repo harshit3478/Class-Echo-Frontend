@@ -18,9 +18,9 @@ import { notifyUnauthorized } from './authSession';
 // Switch to local backend for development:
 // Android emulator: 'http://10.0.2.2:8000'
 // iOS simulator / Expo Go on device: 'http://localhost:8000'
-// Production: 'https://classecho-worker-229781472248.asia-south1.run.app'
+// Production: 'https://classecho-web-gu6527wmpa-el.a.run.app'
 const API_BASE_URL =
-  'https://classecho-worker-229781472248.asia-south1.run.app';
+  'https://classecho-web-gu6527wmpa-el.a.run.app';
 
 class ApiError extends Error {
   status: number;

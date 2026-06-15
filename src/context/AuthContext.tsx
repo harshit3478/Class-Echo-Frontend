@@ -8,10 +8,9 @@ import {
   useState,
 } from 'react';
 
-import * as SecureStore from 'expo-secure-store';
-
 import { login } from '../lib/api';
 import { setUnauthorizedHandler } from '../lib/authSession';
+import { deleteItem, getItem, setItem } from '../lib/storage';
 import { UserRole } from '../types/api';
 
 const TOKEN_KEY = 'auth_token';
@@ -39,8 +38,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
   useEffect(() => {
     async function loadSession() {
       try {
-        const token = await SecureStore.getItemAsync(TOKEN_KEY);
-        const role = await SecureStore.getItemAsync(ROLE_KEY);
+        const token = await getItem(TOKEN_KEY);
+        const role = await getItem(ROLE_KEY);
         if (token && role) {
           setSession({ token, role: role as UserRole });
         }
@@ -54,8 +53,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
   }, []);
 
   const persistSession = useCallback(async (token: string, role: UserRole) => {
-    await SecureStore.setItemAsync(TOKEN_KEY, token);
-    await SecureStore.setItemAsync(ROLE_KEY, role);
+    await setItem(TOKEN_KEY, token);
+    await setItem(ROLE_KEY, role);
   }, []);
 
   const signIn = useCallback(async (username: string, password: string) => {
@@ -76,8 +75,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
   }, [persistSession]);
 
   const signOut = useCallback(async () => {
-    await SecureStore.deleteItemAsync(TOKEN_KEY);
-    await SecureStore.deleteItemAsync(ROLE_KEY);
+    await deleteItem(TOKEN_KEY);
+    await deleteItem(ROLE_KEY);
     setSession(null);
   }, []);
 
